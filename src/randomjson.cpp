@@ -113,7 +113,7 @@ int add_string(char* json, int max_size) {
     const char hexa_digits[] = "0123456789ABCDEFabcdef";
     std::uniform_int_distribution<int> hexa_digit_chooser(0, 21);
     const char escaped_char[] = "\"\\bfnrt"; // '\u' is handled differently
-    std::uniform_int_distribution<int> escaped_char_chooser(0, 7);
+    std::uniform_int_distribution<int> escaped_char_chooser(0, 6);
 
     std::normal_distribution<float> size_chooser(min_size*2, max_size/8);
     //int size = size_chooser(random_generator);
@@ -140,22 +140,21 @@ int add_string(char* json, int max_size) {
         else {
             char_type = i;
         }
-
         switch (char_type) {
             case 1:
                 do {
                     json[i] = random_generator() & 0b01111111;
-                } while (json[i] == '"');
+                } while (json[i] == '"' || json[i] == '\\' || json[i] <= 0x1f);
                 char_size = 1;
                 break;
             case 2:
                 json[i-1] = random_generator();
-                if (json[i-1] == '\\'){
-                    json[i] = escaped_char_chooser(random_generator);
+                if (json[i-1] == '\\') {
+                    json[i] = escaped_char[escaped_char_chooser(random_generator)];
                 }
                 else {
                     json[i-1] = (json[i-1] | 0b11000000) & 0b11011111;
-                    while (static_cast<unsigned char>(json[i-1]) <= static_cast<unsigned char>(0xc2) ){
+                    while (static_cast<unsigned char>(json[i-1]) <= static_cast<unsigned char>(0xc2)){
                         json[i-1] = (random_generator() | 0b11000000) & 0b11011111;
                     }
                     json[i] = (random_generator() | 0b10000000) & 0b10111111;
@@ -244,7 +243,15 @@ int add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<boo
     *json = ':';
     offset += colon_size;
     json += sizeof(char);
-    offset += add_value(json, closing_stack, use_comma, max_size - string_size - comma_length);
+    int entry_size = add_value(json, closing_stack, use_comma, max_size - string_size - comma_length);
+
+    // we failed to write a value
+    // This should not happen, but it does happen frequently at the end of documents
+    if (entry_size == 0) {
+        return 0;
+    }
+
+    offset += entry_size;
 
     return offset;
 }
@@ -257,7 +264,7 @@ int add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use
     }
 
     std::uniform_int_distribution<int> value_type_chooser(0, 2);
-    int size;
+    int size = 0;
     switch (value_type_chooser(random_generator)) {
         case 0:
             size = init_object_or_array(json, closing_stack, use_comma, max_size);
@@ -274,8 +281,8 @@ int add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use
                 use_comma.top() = true;
             }
             break;
-            default:
-            size = 0;
+        default:
+        size = 0;
         break;
     }
 
