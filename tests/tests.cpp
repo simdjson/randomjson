@@ -3,7 +3,7 @@
 #include <iostream>
 
 int main(int argc, char** argv) {
-    //std::cout << randomjson::seed;
+    std::cout << "seed: " << randomjson::seed << std::endl;
     std::fstream file("test.txt", std::ios::out | std::ios::binary);
     int size = randomjson::default_size;
     if (argc > 1) {
