@@ -1,15 +1,20 @@
 #ifndef RANDOMJSON_H
 #define RANDOMJSON_H
 
-#include <iostream>
-
 #include <bitset>
 #include <fstream>
 #include <random>
 #include <stack>
 
+// public api
 namespace randomjson {
-void generate_json(std::fstream* file, int size);
+void generate_json(std::fstream& file, int size);
+void set_seed(int chosen_seed);
+int get_seed();
+}
+
+// private
+namespace {
 int randomly_add_BOM(char* json);
 int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size);
 int randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma);
@@ -21,7 +26,6 @@ int add_string(char* json, int max_size);
 void add_whitespace(char* json, int max_size);
 int add_randomsized_whitespace(char* json, int max_size);
 
-const int default_size = 1000;
 std::random_device rd;
 int seed = rd();
 std::mt19937 random_generator(seed);
@@ -29,27 +33,30 @@ std::uniform_int_distribution<int> boolean_chooser(0, 1);
 std::uniform_int_distribution<char> char_chooser(0, 255);
 
 // not used
-// To use, uncomment the line in generate_json()
+// To use, uncomment the line in randomjson::generate_json()
 int randomly_add_BOM(char* json) {
+    int size = 0;
     if (boolean_chooser(random_generator)) {
         json[0] = 0xEF;
         json[1] = 0xBB;
         json[2] = 0xBF;
-        return 3;
+        size = 3;
     }
-    return 0;
+
+    return size;
 }
 
 int add_number(char* json, int max_size) {
     const int min_size = 1;
+    int size = 0;
     if (min_size > max_size) {
-        return 0;
+        return size;
     }
 
     const char digits[] = "0123456789";
     std::uniform_int_distribution<int> digit_chooser(0, 9);
     std::normal_distribution<float> size_chooser(min_size*2, max_size/8);
-    int size = std::abs(size_chooser(random_generator));
+    size = std::abs(size_chooser(random_generator));
     if (size < min_size) size = min_size;
     if (size > max_size) size = max_size;
     for (int i = 0; i < size; i++) {
@@ -119,8 +126,9 @@ int add_number(char* json, int max_size) {
 
 int add_string(char* json, int max_size) {
     int min_size = 2;
+    int size = 0;
     if (min_size > max_size) {
-        return 0;
+        return size;
     }
 
     const char hexa_digits[] = "0123456789ABCDEFabcdef";
@@ -131,13 +139,14 @@ int add_string(char* json, int max_size) {
     std::uniform_int_distribution<int> escaped_char_chooser(0, nb_escaped_char-1);
 
     std::normal_distribution<float> size_chooser(min_size*2, max_size/8);
-    int size = std::abs(size_chooser(random_generator));
+    size = std::abs(size_chooser(random_generator));
     if (size < min_size) size = min_size;
     if (size > max_size) size = max_size;
 
     json[0] = '"';
     json[size-1] = '"';
 
+    // Numbers associated to types are arbitrary
     std::uniform_int_distribution<int> char_type_chooser(1, 5);
 
     int i = size-min_size;
@@ -155,13 +164,13 @@ int add_string(char* json, int max_size) {
             char_type = i;
         }
         switch (char_type) {
-            case 1:
+            case 1: // One byte character
                 do {
                     json[i] = random_generator() & 0b01111111;
                 } while (json[i] == '"' || json[i] == '\\' || json[i] <= 0x1f);
                 char_size = 1;
                 break;
-            case 2:
+            case 2: // Two bytes character or escaped character
                 json[i-1] = random_generator();
                 if (json[i-1] == '\\') {
                     json[i] = escaped_char[escaped_char_chooser(random_generator)];
@@ -175,7 +184,7 @@ int add_string(char* json, int max_size) {
                 }
                 char_size = 2;
                 break;
-            case 3:
+            case 3: // Three bytes character
                 json[i-2] = (random_generator() | 0b11100000) & 0b11101111;
                 json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
                 json[i] = (random_generator() | 0b10000000) & 0b10111111;
@@ -191,7 +200,7 @@ int add_string(char* json, int max_size) {
                 }
                 char_size = 3;
                 break;
-            case 4:
+            case 4: // Four bytes character
                 json[i-3] = 0b11110000 + random_generator()%4;
                 json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
                 json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
@@ -208,7 +217,7 @@ int add_string(char* json, int max_size) {
                 }
                 char_size = 4;
                 break;
-            case 5: // '\u' case
+            case 5: // \uXXXX character
                 json[i-5] = '\\';
                 json[i-4] = 'u';
                 json[i-3] = hexa_digits[hexa_digit_chooser(random_generator)];
@@ -227,8 +236,9 @@ int add_string(char* json, int max_size) {
 
 int add_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
     int comma_length = use_comma.top() ? 1: 0;
+    int size = 0;
     if (max_size < comma_length) {
-        return 0;
+        return size;
     }
 
     int offset = add_randomsized_whitespace(json, max_size);
@@ -239,7 +249,8 @@ int add_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool
         offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size-offset);
     }
     
-    return add_value(json + offset*sizeof(char), closing_stack, use_comma, max_size-offset) + offset;
+    size = add_value(json + offset*sizeof(char), closing_stack, use_comma, max_size-offset) + offset;
+    return size;
 }
 
 int add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
@@ -248,45 +259,56 @@ int add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<boo
     const int min_value_size = 1;
     int comma_length = use_comma.top() ? 1 : 0;
     int min_size = min_key_size + colon_size + min_value_size + comma_length;
+    int size = 0;
     if (min_size > max_size) {
-        return 0;
+        return size;
     }
+    // Adding before key or comma
     int offset = add_randomsized_whitespace(json, max_size - min_size);
+
+    // Adding comma before key if necessary
     if (use_comma.top()) {
         json[offset] = ',';
         offset++;
         min_size -= comma_length;
+        // Adding whitespace after comma
         offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size - offset - min_size);
     }
+    // Adding key
     min_size -= min_key_size;
     int key_size = add_string(json + offset*sizeof(char), max_size - offset - min_size);
     offset += key_size;
+    // Adding space after key and before colon
     offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size - offset - min_size);
+    // Adding colon
     json[offset] = ':';
     min_size -= colon_size;
     offset++;
+    // Adding whitespace after colon and before value
     offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size - offset - min_size);
+    // Adding value
     int value_size = add_value(json + offset*sizeof(char), closing_stack, use_comma, max_size - offset);
 
     // Quick fix if we failed to write a value
     // This should not happen, but it actually happens frequently at the end of documents.
     if (value_size == 0) {
-        return 0;
+        return size;
     }
 
-    offset += value_size;
-    return offset;
+    size = offset + value_size;
+    return size;
 }
 
 int add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
     const int min_size = 1;
+    int size = 0;
 
     if (min_size > max_size) {
-        return 0;
+        return size;
     }
 
+    // the number associated to the type is arbitrary
     std::uniform_int_distribution<int> value_type_chooser(0, 2);
-    int size;
     switch (value_type_chooser(random_generator)) {
         case 0:
             size = init_object_or_array(json, closing_stack, use_comma, max_size);
@@ -313,8 +335,9 @@ int add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use
 
 int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
     const int min_size = 2;
+    int size = 0;
     if (min_size > max_size) {
-        return 0;
+        return size;
     }
     
     if (boolean_chooser(random_generator)) {
@@ -325,21 +348,23 @@ int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack
         json[0] = '{';
         closing_stack.push('}');
     }
+    size = 1;
     use_comma.push(false);
 
-    return 1;
+    return size;
 }
 
 int randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma) {
     const int magic_closer = 0x40000000;
+    int size = 0;
     if (closing_stack.size() > 1 && magic_closer >= random_generator()) {
         json[0] = closing_stack.top();
         closing_stack.pop();
         use_comma.pop();
         use_comma.top() = true;
-        return 1;
+        size = 1;
     }
-    return 0;
+    return size;
 }
 
 int add_randomsized_whitespace(char* json, int max_size) {
@@ -360,13 +385,16 @@ void add_whitespace(char* json, int size) {
         json[i] = whitespaces[char_chooser(random_generator)];
     }
 }
+}
 
+// public definitions
+namespace randomjson {
 void generate_json(std::fstream& file, int size) {
     char* json = (char*) malloc(size);
     int offset = 0;
     // offset = randomly_add_BOM(json);
-    std::stack<char> closing_stack;
-    std::stack<bool> use_comma;
+    std::stack<char> closing_stack; // Used to keep track of the structure we're in
+    std::stack<bool> use_comma; // Used to keep track if a comma is necessary or not
 
     offset += add_randomsized_whitespace(json+offset*sizeof(char), size);
     offset += init_object_or_array(json + offset*sizeof(char), closing_stack,  use_comma, size-offset);
@@ -403,6 +431,16 @@ void generate_json(std::fstream& file, int size) {
     file.write(json, sizeof(char)*size);
     free(json);
 }
+
+
+void set_seed(int chosen_seed) {
+    seed = chosen_seed;
+}
+
+int get_seed() {
+    return seed;
+}
+
 }
 
 #endif
