@@ -1,6 +1,6 @@
 [submodule "dependencies/fastvalidate-utf-8"]
-	path = dependencies/fastvalidate-utf-8
+	path = tests/dependencies/fastvalidate-utf-8
 	url = https://github.com/lemire/fastvalidate-utf-8
 [submodule "dependencies/simdjson"]
-	path = dependencies/simdjson
+	path = tests/dependencies/simdjson
 	url = https://github.com/lemire/simdjson

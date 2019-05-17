@@ -8,9 +8,12 @@
 
 // public api
 namespace randomjson {
-void generate_json(std::fstream& file, int size);
+void generate_json_file(std::string file_name, int size);
+void generate_json(char* json, int size);
 void set_seed(int chosen_seed);
 int get_seed();
+void activate_BOM();
+void deactivate_BOM();
 }
 
 // private
@@ -31,9 +34,8 @@ int seed = rd();
 std::mt19937 random_generator(seed);
 std::uniform_int_distribution<int> boolean_chooser(0, 1);
 std::uniform_int_distribution<char> char_chooser(0, 255);
+bool BOM_is_activated = false;
 
-// not used
-// To use, uncomment the line in randomjson::generate_json()
 int randomly_add_BOM(char* json) {
     int size = 0;
     if (boolean_chooser(random_generator)) {
@@ -164,68 +166,68 @@ int add_string(char* json, int max_size) {
             char_type = i;
         }
         switch (char_type) {
-            case 1: // One byte character
-                do {
-                    json[i] = random_generator() & 0b01111111;
-                } while (json[i] == '"' || json[i] == '\\' || json[i] <= 0x1f);
-                char_size = 1;
-                break;
-            case 2: // Two bytes character or escaped character
-                json[i-1] = random_generator();
-                if (json[i-1] == '\\') {
-                    json[i] = escaped_char[escaped_char_chooser(random_generator)];
+        case 1: // One byte character
+            do {
+                json[i] = random_generator() & 0b01111111;
+            } while (json[i] == '"' || json[i] == '\\' || json[i] <= 0x1f);
+            char_size = 1;
+            break;
+        case 2: // Two bytes character or escaped character
+            json[i-1] = random_generator();
+            if (json[i-1] == '\\') {
+                json[i] = escaped_char[escaped_char_chooser(random_generator)];
+            }
+            else {
+                json[i-1] = (json[i-1] | 0b11000000) & 0b11011111;
+                while (static_cast<unsigned char>(json[i-1]) <= static_cast<unsigned char>(0xc2)){
+                    json[i-1] = (random_generator() | 0b11000000) & 0b11011111;
                 }
-                else {
-                    json[i-1] = (json[i-1] | 0b11000000) & 0b11011111;
-                    while (static_cast<unsigned char>(json[i-1]) <= static_cast<unsigned char>(0xc2)){
-                        json[i-1] = (random_generator() | 0b11000000) & 0b11011111;
-                    }
-                    json[i] = (random_generator() | 0b10000000) & 0b10111111;
-                }
-                char_size = 2;
-                break;
-            case 3: // Three bytes character
-                json[i-2] = (random_generator() | 0b11100000) & 0b11101111;
-                json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
                 json[i] = (random_generator() | 0b10000000) & 0b10111111;
-                if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xe0)) {
-                    while (static_cast<unsigned char>(json[i-1]) < static_cast<unsigned char>(0xa0)) {
-                        json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
-                    }
+            }
+            char_size = 2;
+            break;
+        case 3: // Three bytes character
+            json[i-2] = (random_generator() | 0b11100000) & 0b11101111;
+            json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
+            json[i] = (random_generator() | 0b10000000) & 0b10111111;
+            if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xe0)) {
+                while (static_cast<unsigned char>(json[i-1]) < static_cast<unsigned char>(0xa0)) {
+                    json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
                 }
-                else if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xed)) {
-                    while (static_cast<unsigned char>(json[i-1]) > static_cast<unsigned char>(0x9f)) {
-                        json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
-                    }
+            }
+            else if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xed)) {
+                while (static_cast<unsigned char>(json[i-1]) > static_cast<unsigned char>(0x9f)) {
+                    json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
                 }
-                char_size = 3;
-                break;
-            case 4: // Four bytes character
-                json[i-3] = 0b11110000 + random_generator()%4;
-                json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
-                json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
-                json[i] = (random_generator() | 0b10000000) & 0b10111111;
-                if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf0)) {
-                    while (static_cast<unsigned char>(json[i-2]) < static_cast<unsigned char>(0x90)) {
-                        json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
-                    }
+            }
+            char_size = 3;
+            break;
+        case 4: // Four bytes character
+            json[i-3] = 0b11110000 + random_generator()%4;
+            json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
+            json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
+            json[i] = (random_generator() | 0b10000000) & 0b10111111;
+            if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf0)) {
+                while (static_cast<unsigned char>(json[i-2]) < static_cast<unsigned char>(0x90)) {
+                    json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
                 }
-                else if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf4)) {
-                    while (static_cast<unsigned char>(json[i-2]) > static_cast<unsigned char>(0x8f)) {
-                        json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
-                    }
+            }
+            else if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf4)) {
+                while (static_cast<unsigned char>(json[i-2]) > static_cast<unsigned char>(0x8f)) {
+                    json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
                 }
-                char_size = 4;
-                break;
-            case 5: // \uXXXX character
-                json[i-5] = '\\';
-                json[i-4] = 'u';
-                json[i-3] = hexa_digits[hexa_digit_chooser(random_generator)];
-                json[i-2] = hexa_digits[hexa_digit_chooser(random_generator)];
-                json[i-1] = hexa_digits[hexa_digit_chooser(random_generator)];
-                json[i] = hexa_digits[hexa_digit_chooser(random_generator)];
-                char_size = 6;
-                break;
+            }
+            char_size = 4;
+            break;
+        case 5: // \uXXXX character
+            json[i-5] = '\\';
+            json[i-4] = 'u';
+            json[i-3] = hexa_digits[hexa_digit_chooser(random_generator)];
+            json[i-2] = hexa_digits[hexa_digit_chooser(random_generator)];
+            json[i-1] = hexa_digits[hexa_digit_chooser(random_generator)];
+            json[i] = hexa_digits[hexa_digit_chooser(random_generator)];
+            char_size = 6;
+            break;
         }
 
         i -= char_size;
@@ -263,7 +265,7 @@ int add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<boo
     if (min_size > max_size) {
         return size;
     }
-    // Adding before key or comma
+    // Adding whitespace before key or comma
     int offset = add_randomsized_whitespace(json, max_size - min_size);
 
     // Adding comma before key if necessary
@@ -310,24 +312,24 @@ int add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use
     // the number associated to the type is arbitrary
     std::uniform_int_distribution<int> value_type_chooser(0, 2);
     switch (value_type_chooser(random_generator)) {
-        case 0:
-            size = init_object_or_array(json, closing_stack, use_comma, max_size);
-            break;
-        case 1:
-            size = add_string(json, max_size);
-            if (size != 0) {
-                use_comma.top() = true;
-            }
+    case 0:
+        size = init_object_or_array(json, closing_stack, use_comma, max_size);
         break;
-        case 2:
-            size = add_number(json, max_size);
-            if (size != 0) {
-                use_comma.top() = true;
-            }
-            break;
-        default:
-        size = 0;
+    case 1:
+        size = add_string(json, max_size);
+        if (size != 0) {
+            use_comma.top() = true;
+        }
+    break;
+    case 2:
+        size = add_number(json, max_size);
+        if (size != 0) {
+            use_comma.top() = true;
+        }
         break;
+    default:
+    size = 0;
+    break;
     }
 
     return size;
@@ -389,10 +391,11 @@ void add_whitespace(char* json, int size) {
 
 // public definitions
 namespace randomjson {
-void generate_json(std::fstream& file, int size) {
-    char* json = (char*) malloc(size);
+void generate_json(char* json, int size) {
     int offset = 0;
-    // offset = randomly_add_BOM(json);
+    if (BOM_is_activated) {
+        offset = randomly_add_BOM(json);
+    }
     std::stack<char> closing_stack; // Used to keep track of the structure we're in
     std::stack<bool> use_comma; // Used to keep track if a comma is necessary or not
 
@@ -420,18 +423,25 @@ void generate_json(std::fstream& file, int size) {
         int closing_offset = randomly_close_bracket(json+offset*sizeof(char), closing_stack, use_comma);
         offset += closing_offset;
         space_left -= closing_offset;
-        if (closing_stack.top() == ']') {
+        switch (closing_stack.top()) {
+        case ']' :
             offset += add_array_entry(json+offset*sizeof(char), closing_stack, use_comma, space_left);
-        }
-        else {
+            break;
+        case '}':
             offset += add_object_entry(json+offset*sizeof(char), closing_stack, use_comma, space_left);
+            break;
         }
     }
-
-    file.write(json, sizeof(char)*size);
-    free(json);
 }
 
+void generate_json_file(std::string file_name, int size) {
+    std::fstream file(file_name, std::ios::out | std::ios::binary);
+    char* json = (char*) malloc(size);
+    randomjson::generate_json(json, size);
+    file.write(json, sizeof(char)*size);
+    free(json);
+    file.close();
+}
 
 void set_seed(int chosen_seed) {
     seed = chosen_seed;
@@ -439,6 +449,14 @@ void set_seed(int chosen_seed) {
 
 int get_seed() {
     return seed;
+}
+
+void activate_BOM() {
+    BOM_is_activated = true;
+}
+
+void deactivate_BOM() {
+    BOM_is_activated = false;
 }
 
 }
