@@ -391,6 +391,7 @@ void add_whitespace(char* json, int size) {
 
 // public definitions
 namespace randomjson {
+
 void generate_json(char* json, int size) {
     int offset = 0;
     if (BOM_is_activated) {

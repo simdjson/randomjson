@@ -1,29 +1,24 @@
 #include <iostream>
-#include <cassert>
 
 #include "randomjson.h"
-//#include "simdjson.h"
-//#include "simdjson.cpp"
-#include "simdutf8check.h"
+#include "simdjson.h"
+#include "simdjson.cpp"
 
-void test_utf8(char* json, int size) {
-    assert(validate_utf8_fast(json, size));
+// There is a conflict with simdjson.cpp because it contains simdutf8checks.
+namespace simdutf8check {
+#include "simdutf8check.h"
 }
 
-void test_parse_simdjson(std::string json_filename, int size) {  
-    //padded_string p = get_corpus("test.json"); 
-    //padded_string p = get_corpus("canada.json");
-    /*ParsedJson pj = build_parsed_json(p); // do the parsing
-    if( ! pj.isValid() ) {
-        // something went wrong
-    }*/
-    /*ParsedJson pj;
-    pj.allocateCapacity(p.size());
-    const int res = json_parse(p, pj);
-    //assert(res != 0);
-    if (res != 0) {
-        std::cout << "test";
-    }*/
+void test_utf8(char* json, int size) {
+    assert(simdutf8check::validate_utf8_fast(json, size));
+}
+
+void test_parse_simdjson(char* json, int size) {
+    ParsedJson pj;
+    bool allocation_is_successful = pj.allocateCapacity(size);
+    assert(allocation_is_successful);
+    const int res = json_parse(json,size, pj);
+    assert(res != 0);
 }
 
 int main(int argc, char** argv) {
@@ -33,13 +28,10 @@ int main(int argc, char** argv) {
     if (argc > 1) {
         size = std::stoi(argv[1]);
     }
-    //randomjson::generate_json_file("test.json", size);
 
     char* json = (char*) malloc(size);
     randomjson::generate_json(json, size);
-    test_utf8(json, size);
-    char json[] = {};
-    test_parse_simdjson({}, size);
+    test_parse_simdjson(json, size);
     free(json);
 
     return 0;
