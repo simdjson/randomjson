@@ -17,22 +17,24 @@ void test_parse_simdjson(char* json, int size) {
     ParsedJson pj;
     bool allocation_is_successful = pj.allocateCapacity(size);
     assert(allocation_is_successful);
-    const int res = json_parse(json,size, pj);
+    const int res = json_parse(json, size, pj);
     assert(res != 0);
 }
 
 int main(int argc, char** argv) {
     const int default_size = 1000;
-    std::cout << "seed: " << randomjson::get_seed() << std::endl;
     int size = default_size;
     if (argc > 1) {
         size = std::stoi(argv[1]);
     }
 
     char* json = (char*) malloc(size);
+    // Failing seeds:
+    // 113722174
+    // 113722175
     randomjson::generate_json(json, size);
+    std::cout << "seed: " << randomjson::get_seed() << std::endl;
     test_parse_simdjson(json, size);
     free(json);
-
     return 0;
 }

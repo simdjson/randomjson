@@ -9,7 +9,9 @@
 // public api
 namespace randomjson {
 void generate_json_file(std::string file_name, int size);
+void generate_json_file(std::string file_name, int size, int seed);
 void generate_json(char* json, int size);
+void generate_json(char* json, int size, int seed);
 void set_seed(int chosen_seed);
 int get_seed();
 void activate_BOM();
@@ -420,7 +422,6 @@ void generate_json(char* json, int size) {
         else if (space_left < 0) {
             // There's a problem. What we do ?
         }
-
         int closing_offset = randomly_close_bracket(json+offset*sizeof(char), closing_stack, use_comma);
         offset += closing_offset;
         space_left -= closing_offset;
@@ -435,6 +436,11 @@ void generate_json(char* json, int size) {
     }
 }
 
+void generate_json(char* json, int size, int seed) {
+    set_seed(seed);
+    generate_json(json, size);
+}
+
 void generate_json_file(std::string file_name, int size) {
     std::fstream file(file_name, std::ios::out | std::ios::binary);
     char* json = (char*) malloc(size);
@@ -444,8 +450,14 @@ void generate_json_file(std::string file_name, int size) {
     file.close();
 }
 
+void generate_json_file(std::string file_name, int size, int seed) {
+    set_seed(seed);
+    generate_json_file(file_name, size);
+}
+
 void set_seed(int chosen_seed) {
     seed = chosen_seed;
+    random_generator.seed(seed);
 }
 
 int get_seed() {
