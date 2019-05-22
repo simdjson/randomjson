@@ -28,7 +28,6 @@ int main(int argc, char** argv) {
         size = std::stoi(argv[1]);
     }
 
-    char* json = (char*) malloc(size);
     // Failing seeds:
     // -1042029749
     // -581267614
@@ -36,10 +35,10 @@ int main(int argc, char** argv) {
     // 113722174
     // 113722175
     // 511262440
-    randomjson::RandomJson random_json;
-    random_json.generate_json(json, size);
+    randomjson::RandomJson random_json(size);
+    random_json.generate();
     std::cout << "seed: " << random_json.get_seed() << std::endl;
-    test_parse_simdjson(json, size);
-    free(json);
+    test_utf8(random_json.get_json(), random_json.get_size());
+    test_parse_simdjson(random_json.get_json(), random_json.get_size());
     return 0;
 }

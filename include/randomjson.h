@@ -11,18 +11,21 @@ namespace randomjson {
 
 class RandomJson {
     public:
-    RandomJson();
+    RandomJson(int size);
+    RandomJson(int size, int seed);
+    ~RandomJson();
 
-    void generate_json_file(std::string file_name, int size);
-    void generate_json_file(std::string file_name, int size, int seed);
-    void generate_json(char* json, int size);
-    void generate_json(char* json, int size, int seed);
+    void generate();
+    char* get_json();
+    int get_size();
     void set_seed(int chosen_seed);
     int get_seed();
     void activate_BOM();
     void deactivate_BOM();
+    void save(std::string file_name);
 
     private:
+    void generate_json(char* json, int size);
     int randomly_add_BOM(char* json);
     int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size);
     int randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma);
@@ -34,6 +37,9 @@ class RandomJson {
     void add_whitespace(char* json, int max_size);
     int add_randomsized_whitespace(char* json, int max_size);
 
+    char* json;
+    int size;
+
     std::random_device rd;
     int seed;
     std::mt19937 random_generator;
@@ -42,11 +48,34 @@ class RandomJson {
     bool BOM_is_activated = false;
 };
 
-RandomJson::RandomJson() : rd(), seed(rd()), random_generator(seed), boolean_chooser(0,1), char_chooser(0,255) {
+RandomJson::RandomJson(int size)
+: size(size)
+, rd()
+, seed(rd())
+, random_generator(seed)
+, boolean_chooser(0,1)
+, char_chooser(0,255)
+{
+    json = new char[size];
+}
 
-};
+RandomJson::RandomJson(int size, int seed)
+: size(size)
+, seed(seed)
+, random_generator(seed)
+, boolean_chooser(0,1)
+, char_chooser(0,255)
+{
+    json = new char[size];
+}
 
-int RandomJson::randomly_add_BOM(char* json) {
+RandomJson::~RandomJson()
+{
+    delete[] json;
+}
+
+int RandomJson::randomly_add_BOM(char* json)
+{
     int size = 0;
     if (boolean_chooser(random_generator)) {
         json[0] = 0xEF;
@@ -58,7 +87,8 @@ int RandomJson::randomly_add_BOM(char* json) {
     return size;
 }
 
-int RandomJson::add_number(char* json, int max_size) {
+int RandomJson::add_number(char* json, int max_size)
+{
     const int min_size = 1;
     int size = 0;
     if (min_size > max_size) {
@@ -136,7 +166,8 @@ int RandomJson::add_number(char* json, int max_size) {
     return size;
 }
 
-int RandomJson::add_string(char* json, int max_size) {
+int RandomJson::add_string(char* json, int max_size)
+{
     int min_size = 2;
     int size = 0;
     if (min_size > max_size) {
@@ -246,7 +277,8 @@ int RandomJson::add_string(char* json, int max_size) {
     return size;
 }
 
-int RandomJson::add_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
+int RandomJson::add_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size)
+{
     int comma_length = use_comma.top() ? 1: 0;
     int size = 0;
     if (max_size < comma_length) {
@@ -265,7 +297,8 @@ int RandomJson::add_array_entry(char* json, std::stack<char>& closing_stack, std
     return size;
 }
 
-int RandomJson::add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
+int RandomJson::add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size)
+{
     const int min_key_size = 2;
     const int colon_size = 1;
     const int min_value_size = 1;
@@ -311,7 +344,8 @@ int RandomJson::add_object_entry(char* json, std::stack<char>& closing_stack, st
     return size;
 }
 
-int RandomJson::add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
+int RandomJson::add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size)
+{
     const int min_size = 1;
     int size = 0;
 
@@ -345,7 +379,8 @@ int RandomJson::add_value(char* json, std::stack<char>& closing_stack, std::stac
     return size;
 }
 
-int RandomJson::init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size) {
+int RandomJson::init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size)
+{
     const int min_size = 2;
     int size = 0;
     if (min_size > max_size) {
@@ -366,7 +401,8 @@ int RandomJson::init_object_or_array(char* json, std::stack<char>& closing_stack
     return size;
 }
 
-int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma) {
+int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma)
+{
     const int magic_closer = 0x40000000;
     int size = 0;
     if (closing_stack.size() > 1 && magic_closer >= random_generator()) {
@@ -379,7 +415,8 @@ int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_sta
     return size;
 }
 
-int RandomJson::add_randomsized_whitespace(char* json, int max_size) {
+int RandomJson::add_randomsized_whitespace(char* json, int max_size)
+{
     std::normal_distribution<float> size_chooser(0, max_size/64);
     int size = std::abs(size_chooser(random_generator));
     if (size < 0) size = 0;
@@ -389,7 +426,8 @@ int RandomJson::add_randomsized_whitespace(char* json, int max_size) {
     return size;
 }
 
-void RandomJson::add_whitespace(char* json, int size) {
+void RandomJson::add_whitespace(char* json, int size)
+{
     const char whitespaces[] {0x09, 0x0A, 0x0D, 0x20};
     std::uniform_int_distribution<char> char_chooser(0, 3);
 
@@ -398,7 +436,8 @@ void RandomJson::add_whitespace(char* json, int size) {
     }
 }
 
-void RandomJson::generate_json(char* json, int size) {
+void RandomJson::generate_json(char* json, int size)
+{
     int offset = 0;
     if (BOM_is_activated) {
         offset = randomly_add_BOM(json);
@@ -440,39 +479,42 @@ void RandomJson::generate_json(char* json, int size) {
     }
 }
 
-void RandomJson::generate_json(char* json, int size, int seed) {
-    set_seed(seed);
+void RandomJson::generate() {
     generate_json(json, size);
 }
 
-void RandomJson::generate_json_file(std::string file_name, int size) {
+char* RandomJson::get_json() {
+    return json;
+}
+int RandomJson::get_size() {
+    return size;
+}
+
+void RandomJson::save(std::string file_name)
+{
     std::fstream file(file_name, std::ios::out | std::ios::binary);
-    char* json = (char*) malloc(size);
-    generate_json(json, size);
     file.write(json, sizeof(char)*size);
-    free(json);
     file.close();
 }
 
-void RandomJson::generate_json_file(std::string file_name, int size, int seed) {
-    set_seed(seed);
-    generate_json_file(file_name, size);
-}
-
-void RandomJson::set_seed(int chosen_seed) {
+void RandomJson::set_seed(int chosen_seed)
+{
     seed = chosen_seed;
     random_generator.seed(seed);
 }
 
-int RandomJson::get_seed() {
+int RandomJson::get_seed()
+{
     return seed;
 }
 
-void RandomJson::activate_BOM() {
+void RandomJson::activate_BOM()
+{
     BOM_is_activated = true;
 }
 
-void RandomJson::deactivate_BOM() {
+void RandomJson::deactivate_BOM()
+{
     BOM_is_activated = false;
 }
 
