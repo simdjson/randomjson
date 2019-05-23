@@ -6,13 +6,13 @@
 #include <random>
 #include <stack>
 
-// public api
 namespace randomjson {
 
 class RandomJson {
     public:
     RandomJson(int size);
     RandomJson(int size, int seed);
+    RandomJson(std::string file); // from file for mutation
     ~RandomJson();
 
     void mutate();
@@ -69,6 +69,22 @@ RandomJson::RandomJson(int size, int seed)
 {
     json = new char[size];
     generate_json(json, size);
+}
+
+
+RandomJson::RandomJson(std::string filename)
+: rd()
+, seed(rd())
+, random_generator(seed)
+, boolean_chooser(0,1)
+, char_chooser(0,255)
+{
+    std::ifstream file (filename, std::ios::in | std::ios::binary | std::ios::ate);
+    size = file.tellg();
+    json = new char[size];
+    file.seekg(0, std::ios::beg);
+    file.read(json, size);
+    file.close();
 }
 
 RandomJson::~RandomJson()

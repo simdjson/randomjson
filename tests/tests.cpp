@@ -22,7 +22,7 @@ void test_parse_simdjson(char* json, int size) {
 }
 
 int main(int argc, char** argv) {
-    const int default_size = 500;
+    const int default_size = 1000;
     int size = default_size;
     if (argc > 1) {
         size = std::stoi(argv[1]);
@@ -36,6 +36,8 @@ int main(int argc, char** argv) {
     // 113722174
     // 113722175
     // 511262440
+    // invalid
+    // -1546109536
     randomjson::RandomJson random_json(size);
     std::cout << "seed: " << random_json.get_seed() << std::endl;
     random_json.save("test.json");
