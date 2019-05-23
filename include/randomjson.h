@@ -15,7 +15,7 @@ class RandomJson {
     RandomJson(int size, int seed);
     ~RandomJson();
 
-    void generate();
+    void mutate();
     char* get_json();
     int get_size();
     void set_seed(int chosen_seed);
@@ -57,6 +57,7 @@ RandomJson::RandomJson(int size)
 , char_chooser(0,255)
 {
     json = new char[size];
+    generate_json(json, size);
 }
 
 RandomJson::RandomJson(int size, int seed)
@@ -67,6 +68,7 @@ RandomJson::RandomJson(int size, int seed)
 , char_chooser(0,255)
 {
     json = new char[size];
+    generate_json(json, size);
 }
 
 RandomJson::~RandomJson()
@@ -290,10 +292,10 @@ int RandomJson::add_array_entry(char* json, std::stack<char>& closing_stack, std
     if (use_comma.top()) {
         json[offset] = ',';
         offset++;
-        offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size-offset);
+        offset += add_randomsized_whitespace(&json[offset], max_size-offset);
     }
     
-    size = add_value(json + offset*sizeof(char), closing_stack, use_comma, max_size-offset) + offset;
+    size = add_value(&json[offset], closing_stack, use_comma, max_size-offset) + offset;
     return size;
 }
 
@@ -317,22 +319,22 @@ int RandomJson::add_object_entry(char* json, std::stack<char>& closing_stack, st
         offset++;
         min_size -= comma_length;
         // Adding whitespace after comma
-        offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size - offset - min_size);
+        offset += add_randomsized_whitespace(&json[offset], max_size - offset - min_size);
     }
     // Adding key
     min_size -= min_key_size;
-    int key_size = add_string(json + offset*sizeof(char), max_size - offset - min_size);
+    int key_size = add_string(&json[offset], max_size - offset - min_size);
     offset += key_size;
     // Adding space after key and before colon
-    offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size - offset - min_size);
+    offset += add_randomsized_whitespace(&json[offset], max_size - offset - min_size);
     // Adding colon
     json[offset] = ':';
     min_size -= colon_size;
     offset++;
     // Adding whitespace after colon and before value
-    offset += add_randomsized_whitespace(json + offset*sizeof(char), max_size - offset - min_size);
+    offset += add_randomsized_whitespace(&json[offset], max_size - offset - min_size);
     // Adding value
-    int value_size = add_value(json + offset*sizeof(char), closing_stack, use_comma, max_size - offset);
+    int value_size = add_value(&json[offset], closing_stack, use_comma, max_size - offset);
 
     // Quick fix if we failed to write a value
     // This should not happen, but it actually happens frequently at the end of documents.
@@ -445,8 +447,8 @@ void RandomJson::generate_json(char* json, int size)
     std::stack<char> closing_stack; // Used to keep track of the structure we're in
     std::stack<bool> use_comma; // Used to keep track if a comma is necessary or not
 
-    offset += add_randomsized_whitespace(json+offset*sizeof(char), size);
-    offset += init_object_or_array(json + offset*sizeof(char), closing_stack,  use_comma, size-offset);
+    offset += add_randomsized_whitespace(&json[offset], size);
+    offset += init_object_or_array(&json[offset], closing_stack,  use_comma, size-offset);
     while (true) {
         if (offset >= size) {
             break;
@@ -459,28 +461,77 @@ void RandomJson::generate_json(char* json, int size)
                 closing_stack.pop();
                 offset++;
             }
-            add_whitespace(json+offset*sizeof(char), size-offset);
+            add_whitespace(&json[offset], size-offset);
             break;
         }
         else if (space_left < 0) {
             // There's a problem. What we do ?
         }
-        int closing_offset = randomly_close_bracket(json+offset*sizeof(char), closing_stack, use_comma);
+        int closing_offset = randomly_close_bracket(&json[offset], closing_stack, use_comma);
         offset += closing_offset;
         space_left -= closing_offset;
         switch (closing_stack.top()) {
         case ']' :
-            offset += add_array_entry(json+offset*sizeof(char), closing_stack, use_comma, space_left);
+            offset += add_array_entry(&json[offset], closing_stack, use_comma, space_left);
             break;
         case '}':
-            offset += add_object_entry(json+offset*sizeof(char), closing_stack, use_comma, space_left);
+            offset += add_object_entry(&json[offset], closing_stack, use_comma, space_left);
             break;
         }
     }
 }
 
-void RandomJson::generate() {
-    generate_json(json, size);
+void RandomJson::mutate() {
+    char opening_bracket;
+    int opening_bracket_position = -1;
+    char closing_bracket;
+    int closing_bracket_position = size-1;
+    int brackets_to_close = 1;
+
+    // finding a random opening bracket
+    std::uniform_int_distribution<int> position_chooser(0, size);
+    int position = position_chooser(random_generator);    
+    while (position < size-1) {
+        switch (json[position]) {
+            case '{':
+                opening_bracket = '{';
+                closing_bracket = '}';
+                opening_bracket_position = position;
+                break;
+            case '[':
+                opening_bracket = '[';
+                closing_bracket = ']';
+                opening_bracket_position = position;
+                break;
+            default:
+                position++;
+                break;
+        }
+        if (opening_bracket_position > -1) {
+            break;
+        }
+    }
+    
+    // finding the corresponding closing bracket
+    while (position < size-1) {
+        position++;
+        if (json[position] == opening_bracket) {
+            brackets_to_close++;
+        }
+        else if (json[position] == closing_bracket) {
+            brackets_to_close--;
+            if (brackets_to_close == 0) {
+                closing_bracket_position = position;
+                break;
+            }
+        }
+    }
+
+    // generating something random
+    if (closing_bracket_position < size) {
+        int size = closing_bracket_position - opening_bracket_position + 1;
+        generate_json(&json[opening_bracket_position], size);
+    }
 }
 
 char* RandomJson::get_json() {
