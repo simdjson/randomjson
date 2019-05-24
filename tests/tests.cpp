@@ -18,7 +18,10 @@ void test_parse_simdjson(char* json, int size) {
     bool allocation_is_successful = pj.allocateCapacity(size);
     assert(allocation_is_successful);
     const int res = json_parse(json, size, pj);
-    assert(res != 0);
+    if (res != simdjson::SUCCESS) {
+        std::cout << "simdjson error: " << res << std::endl;
+    }
+    assert(res == simdjson::SUCCESS);
 }
 
 int main(int argc, char** argv) {
@@ -28,24 +31,14 @@ int main(int argc, char** argv) {
         size = std::stoi(argv[1]);
     }
 
-    // Failing seeds:
-    // -1042029749
-    // -581267614
-    // -306857543
-    // -149936094
-    // 113722174
-    // 113722175
-    // 511262440
-    // invalid
-    // -1546109536
-    randomjson::RandomJson random_json(size);
+    randomjson::RandomJson random_json(64);
     std::cout << "seed: " << random_json.get_seed() << std::endl;
     random_json.save("test.json");
     test_utf8(random_json.get_json(), random_json.get_size());
     test_parse_simdjson(random_json.get_json(), random_json.get_size());
-    random_json.mutate();
+    /*random_json.mutate();
     test_utf8(random_json.get_json(), random_json.get_size());
     test_parse_simdjson(random_json.get_json(), random_json.get_size());
-    random_json.save("mutate.json");
+    random_json.save("mutate.json");*/
     return 0;
 }

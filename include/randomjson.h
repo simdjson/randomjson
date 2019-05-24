@@ -10,11 +10,13 @@ namespace randomjson {
 
 class RandomJson {
     public:
+    RandomJson();
     RandomJson(int size);
     RandomJson(int size, int seed);
     RandomJson(std::string file); // from file for mutation
     ~RandomJson();
 
+    void generate();
     void mutate();
     char* get_json();
     int get_size();
@@ -39,46 +41,72 @@ class RandomJson {
 
     char* json;
     int size;
+    bool generated; // wheter the json has data or not
 
-    std::random_device rd;
     int seed;
     std::mt19937 random_generator;
     std::uniform_int_distribution<int> boolean_chooser;
     std::uniform_int_distribution<char> char_chooser;
     bool BOM_is_activated = false;
+
+    // options
+    // none is currently implemented
+    int max_number_value;
+    int max_string_size; // in bytes
+    int max_dept;
+    float chances_have_BOM;
+    float chances_over_max_number_value;
+    float chances_over_max_string_size;
+    float chances_over_max_dept;
+    float chances_bad_comma;
+    float chances_bad_utf8;
+    float chances_bad_string;
+    float chances_bad_number;
+    float chances_generating_number;
+    float chances_generating_string;
+    float chances_generating_object;
+    float chances_generating_array;
+    float chances_generating_null;
+    float chances_generating_false;
+    float chances_generating_true;
+
 };
 
-RandomJson::RandomJson(int size)
-: size(size)
-, rd()
-, seed(rd())
-, random_generator(seed)
+RandomJson::RandomJson()
+: json(nullptr)
+, size(0)
 , boolean_chooser(0,1)
 , char_chooser(0,255)
+, max_number_value(32)
+, max_string_size(1024)
+, max_dept(1024)
+, chances_over_max_number_value(0)
+, chances_over_max_string_size(0)
+, chances_over_max_depth(0)
 {
-    json = new char[size];
-    generate_json(json, size);
+}
+
+RandomJson::RandomJson(int size)
+: RandomJson::RandomJson(size, std::random_device{}())
+{
 }
 
 RandomJson::RandomJson(int size, int seed)
-: size(size)
-, seed(seed)
-, random_generator(seed)
-, boolean_chooser(0,1)
-, char_chooser(0,255)
+: RandomJson::RandomJson()
 {
+    this->size = size;
+    this->seed = seed;
+    random_generator.seed(seed);
     json = new char[size];
     generate_json(json, size);
 }
 
 
 RandomJson::RandomJson(std::string filename)
-: rd()
-, seed(rd())
-, random_generator(seed)
-, boolean_chooser(0,1)
-, char_chooser(0,255)
+: RandomJson::RandomJson()
 {
+    seed = std::random_device{}();
+    random_generator.seed(seed);
     std::ifstream file (filename, std::ios::in | std::ios::binary | std::ios::ate);
     size = file.tellg();
     json = new char[size];
@@ -390,8 +418,8 @@ int RandomJson::add_value(char* json, std::stack<char>& closing_stack, std::stac
         }
         break;
     default:
-    size = 0;
-    break;
+        size = 0;
+        break;
     }
 
     return size;
