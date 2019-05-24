@@ -31,7 +31,8 @@ int main(int argc, char** argv) {
         size = std::stoi(argv[1]);
     }
 
-    randomjson::RandomJson random_json(64);
+    // \ud9ee
+    randomjson::RandomJson random_json(size);
     std::cout << "seed: " << random_json.get_seed() << std::endl;
     random_json.save("test.json");
     test_utf8(random_json.get_json(), random_json.get_size());

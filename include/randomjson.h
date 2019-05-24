@@ -11,8 +11,8 @@ namespace randomjson {
 class RandomJson {
     public:
     RandomJson();
-    RandomJson(int size);
-    RandomJson(int size, int seed);
+    RandomJson(int size); // automatically generates json
+    RandomJson(int size, int seed); // automatically generates json
     RandomJson(std::string file); // from file for mutation
     ~RandomJson();
 
@@ -20,7 +20,8 @@ class RandomJson {
     void mutate();
     char* get_json();
     int get_size();
-    void set_seed(int chosen_seed);
+    void set_size(int new_size);
+    void set_seed(int new_seed);
     int get_seed();
     void activate_BOM();
     void deactivate_BOM();
@@ -50,18 +51,22 @@ class RandomJson {
     bool BOM_is_activated = false;
 
     // options
-    // none is currently implemented
-    int max_number_value;
+    int max_number_range; // Numbers will be smaller than 10^range
+    int max_number_size; // in bytes and in length
     int max_string_size; // in bytes
+    int max_whitespace_size; // in bytes and in length
     int max_dept;
     float chances_have_BOM;
-    float chances_over_max_number_value;
+    float chances_over_max_number_range;
+    float chances_over_max_number_size;
     float chances_over_max_string_size;
-    float chances_over_max_dept;
-    float chances_bad_comma;
-    float chances_bad_utf8;
-    float chances_bad_string;
-    float chances_bad_number;
+    float chances_over_max_whitespace_size;
+    float chances_over_max_depth;
+    float chances_invalid_comma;
+    float chances_invalid_utf8;
+    float chances_invalid_string;
+    float chances_invalid_codepoint;
+    float chances_invalid_number;
     float chances_generating_number;
     float chances_generating_string;
     float chances_generating_object;
@@ -77,12 +82,29 @@ RandomJson::RandomJson()
 , size(0)
 , boolean_chooser(0,1)
 , char_chooser(0,255)
-, max_number_value(32)
-, max_string_size(1024)
+, max_number_range(32)
+, max_number_size(5)
+, max_string_size(24)
+, max_whitespace_size(24)
 , max_dept(1024)
-, chances_over_max_number_value(0)
+, chances_have_BOM(0)
+, chances_over_max_number_range(0)
+, chances_over_max_number_size(0)
 , chances_over_max_string_size(0)
+, chances_over_max_whitespace_size(0)
 , chances_over_max_depth(0)
+, chances_invalid_comma(0)
+, chances_invalid_utf8(0)
+, chances_invalid_string(0)
+, chances_invalid_codepoint(0)
+, chances_invalid_number(0)
+, chances_generating_number(0)
+, chances_generating_string(0)
+, chances_generating_object(0)
+, chances_generating_array(0)
+, chances_generating_null(0)
+, chances_generating_false(0)
+, chances_generating_true(0)
 {
 }
 
@@ -100,7 +122,6 @@ RandomJson::RandomJson(int size, int seed)
     json = new char[size];
     generate_json(json, size);
 }
-
 
 RandomJson::RandomJson(std::string filename)
 : RandomJson::RandomJson()
@@ -141,12 +162,13 @@ int RandomJson::add_number(char* json, int max_size)
         return size;
     }
 
+    max_size = std::min(max_size, max_number_size);
+
     const char digits[] = "0123456789";
     std::uniform_int_distribution<int> digit_chooser(0, 9);
-    std::normal_distribution<float> size_chooser(min_size*2, max_size/8);
-    size = std::abs(size_chooser(random_generator));
-    if (size < min_size) size = min_size;
-    if (size > max_size) size = max_size;
+    std::uniform_int_distribution<int> size_chooser(min_size, max_size);
+    size = size_chooser(random_generator);
+
     for (int i = 0; i < size; i++) {
         json[i] = digits[digit_chooser(random_generator)];
     }
@@ -220,6 +242,8 @@ int RandomJson::add_string(char* json, int max_size)
         return size;
     }
 
+    max_size = std::min(max_size, max_string_size);
+
     const char hexa_digits[] = "0123456789ABCDEFabcdef";
     const int nb_hexa_digits = 22;
     std::uniform_int_distribution<int> hexa_digit_chooser(0, nb_hexa_digits-1);
@@ -227,10 +251,8 @@ int RandomJson::add_string(char* json, int max_size)
     const int nb_escaped_char = 7;
     std::uniform_int_distribution<int> escaped_char_chooser(0, nb_escaped_char-1);
 
-    std::normal_distribution<float> size_chooser(min_size*2, max_size/8);
-    size = std::abs(size_chooser(random_generator));
-    if (size < min_size) size = min_size;
-    if (size > max_size) size = max_size;
+    std::uniform_int_distribution<int> size_chooser(min_size, max_size);
+    size = size_chooser(random_generator);
 
     json[0] = '"';
     json[size-1] = '"';
@@ -306,7 +328,7 @@ int RandomJson::add_string(char* json, int max_size)
             }
             char_size = 4;
             break;
-        case 5: // \uXXXX character
+        case 5: // codepoint
             json[i-5] = '\\';
             json[i-4] = 'u';
             json[i-3] = hexa_digits[hexa_digit_chooser(random_generator)];
@@ -339,7 +361,14 @@ int RandomJson::add_array_entry(char* json, std::stack<char>& closing_stack, std
         offset += add_randomsized_whitespace(&json[offset], max_size-offset);
     }
     
-    size = add_value(&json[offset], closing_stack, use_comma, max_size-offset) + offset;
+    int value_size = add_value(&json[offset], closing_stack, use_comma, max_size-offset);
+
+    // we make sure a value has been written
+    if (value_size == 0) {
+        return size;
+    }
+
+    size = value_size + offset;
     return size;
 }
 
@@ -463,10 +492,15 @@ int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_sta
 
 int RandomJson::add_randomsized_whitespace(char* json, int max_size)
 {
-    std::normal_distribution<float> size_chooser(0, max_size/64);
-    int size = std::abs(size_chooser(random_generator));
-    if (size < 0) size = 0;
-    if (size > max_size) size = max_size;
+    const int min_size = 0;
+    int size = 0;
+    if (max_size < min_size) {
+        return size;
+    }
+
+    max_size = std::min(max_size, max_whitespace_size);
+    std::uniform_int_distribution<int> size_chooser(min_size, max_size);
+    size = size_chooser(random_generator);
     add_whitespace(json, size);
 
     return size;
@@ -581,8 +615,14 @@ void RandomJson::mutate() {
 char* RandomJson::get_json() {
     return json;
 }
+
 int RandomJson::get_size() {
     return size;
+}
+
+void RandomJson::set_size(int new_size) {
+    size = new_size;
+    json = new char[size];
 }
 
 void RandomJson::save(std::string file_name)
@@ -592,10 +632,10 @@ void RandomJson::save(std::string file_name)
     file.close();
 }
 
-void RandomJson::set_seed(int chosen_seed)
+void RandomJson::set_seed(int new_seed)
 {
-    seed = chosen_seed;
-    random_generator.seed(seed);
+    seed = new_seed;
+    random_generator.seed(new_seed);
 }
 
 int RandomJson::get_seed()
