@@ -9,11 +9,11 @@ namespace simdutf8check {
 #include "simdutf8check.h"
 }
 
-void test_utf8(char* json, int size) {
+void test_utf8(char* const json, int size) {
     assert(simdutf8check::validate_utf8_fast(json, size));
 }
 
-void test_parse_simdjson(char* json, int size) {
+void test_parse_simdjson(char* const json, int size) {
     ParsedJson pj;
     bool allocation_is_successful = pj.allocateCapacity(size);
     assert(allocation_is_successful);
@@ -31,15 +31,12 @@ int main(int argc, char** argv) {
         size = std::stoi(argv[1]);
     }
 
-    // \ud9ee
     randomjson::RandomJson random_json(size);
-    std::cout << "seed: " << random_json.get_seed() << std::endl;
-    random_json.save("test.json");
+    random_json.save("test1.json");
+    random_json.generate();
+    std::cout << "seed: " << random_json.get_generation_seed() << std::endl;
+    random_json.save("test2.json");
     test_utf8(random_json.get_json(), random_json.get_size());
     test_parse_simdjson(random_json.get_json(), random_json.get_size());
-    /*random_json.mutate();
-    test_utf8(random_json.get_json(), random_json.get_size());
-    test_parse_simdjson(random_json.get_json(), random_json.get_size());
-    random_json.save("mutate.json");*/
     return 0;
 }

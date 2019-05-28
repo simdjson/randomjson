@@ -7,10 +7,14 @@
 #include <stack>
 
 namespace randomjson {
+enum class ProvenanceType {
+    file,
+    seed
+};
 
 class RandomJson {
     public:
-    RandomJson();
+    RandomJson(); // must be configurated munually
     RandomJson(int size); // automatically generates json
     RandomJson(int size, int seed); // automatically generates json
     RandomJson(std::string file); // from file for mutation
@@ -18,18 +22,24 @@ class RandomJson {
 
     void generate();
     void mutate();
-    char* get_json();
+    void save(std::string file_name);
+
+    // getters and setters
+    char* const get_json();
     int get_size();
     void set_size(int new_size);
-    void set_seed(int new_seed);
-    int get_seed();
-    void activate_BOM();
-    void deactivate_BOM();
-    void save(std::string file_name);
+    void set_generation_seed(int new_generation_seed);
+    int get_generation_seed();
+    void set_mutation_seed(int new_mutation_seed);
+    int get_mutation_seed();
+    int get_number_of_mutations();
+    bool infos_correspond_to_json();
+    ProvenanceType get_provenance_type();
+    std::string get_filename();
 
     private:
     void generate_json(char* json, int size);
-    int randomly_add_BOM(char* json);
+    int add_BOM(char* json);
     int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size);
     int randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma);
     int add_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size);
@@ -40,15 +50,20 @@ class RandomJson {
     void add_whitespace(char* json, int max_size);
     int add_randomsized_whitespace(char* json, int max_size);
 
+    ProvenanceType provenance_type;
     char* json;
     int size;
-    bool generated; // wheter the json has data or not
+    int number_of_mutations;
+    int generation_seed;
+    int mutation_seed;
+    std::string filename;
+    bool bom;
+    bool attributes_changed;
 
-    int seed;
-    std::mt19937 random_generator;
+    std::mt19937 generation_random_generator;
+    std::mt19937 mutation_random_generator;
     std::uniform_int_distribution<int> boolean_chooser;
     std::uniform_int_distribution<char> char_chooser;
-    bool BOM_is_activated = false;
 
     // options
     int max_number_range; // Numbers will be smaller than 10^range
@@ -80,6 +95,11 @@ class RandomJson {
 RandomJson::RandomJson()
 : json(nullptr)
 , size(0)
+, number_of_mutations(0)
+, generation_seed(0)
+, mutation_seed(0)
+, bom(false)
+, attributes_changed(true)
 , boolean_chooser(0,1)
 , char_chooser(0,255)
 , max_number_range(32)
@@ -113,27 +133,34 @@ RandomJson::RandomJson(int size)
 {
 }
 
-RandomJson::RandomJson(int size, int seed)
+RandomJson::RandomJson(int size, int generation_seed)
 : RandomJson::RandomJson()
 {
     this->size = size;
-    this->seed = seed;
-    random_generator.seed(seed);
+    this->generation_seed = generation_seed;
+    mutation_seed = std::random_device{}();
+    generation_random_generator.seed(generation_seed);
+    mutation_random_generator.seed(mutation_seed);
     json = new char[size];
-    generate_json(json, size);
+    generate();
 }
 
 RandomJson::RandomJson(std::string filename)
 : RandomJson::RandomJson()
 {
-    seed = std::random_device{}();
-    random_generator.seed(seed);
+    this->filename = filename;
+    provenance_type = ProvenanceType::file;
+    generation_seed = std::random_device{}();
+    mutation_seed = std::random_device{}();
+    generation_random_generator.seed(generation_seed);
+    mutation_random_generator.seed(mutation_seed);
     std::ifstream file (filename, std::ios::in | std::ios::binary | std::ios::ate);
     size = file.tellg();
     json = new char[size];
     file.seekg(0, std::ios::beg);
     file.read(json, size);
     file.close();
+    attributes_changed = false;
 }
 
 RandomJson::~RandomJson()
@@ -141,15 +168,12 @@ RandomJson::~RandomJson()
     delete[] json;
 }
 
-int RandomJson::randomly_add_BOM(char* json)
+int RandomJson::add_BOM(char* json)
 {
-    int size = 0;
-    if (boolean_chooser(random_generator)) {
-        json[0] = 0xEF;
-        json[1] = 0xBB;
-        json[2] = 0xBF;
-        size = 3;
-    }
+    int size = 3;
+    json[0] = 0xEF;
+    json[1] = 0xBB;
+    json[2] = 0xBF;
 
     return size;
 }
@@ -167,17 +191,17 @@ int RandomJson::add_number(char* json, int max_size)
     const char digits[] = "0123456789";
     std::uniform_int_distribution<int> digit_chooser(0, 9);
     std::uniform_int_distribution<int> size_chooser(min_size, max_size);
-    size = size_chooser(random_generator);
+    size = size_chooser(generation_random_generator);
 
     for (int i = 0; i < size; i++) {
-        json[i] = digits[digit_chooser(random_generator)];
+        json[i] = digits[digit_chooser(generation_random_generator)];
     }
 
     int first_digit_position = 0;
 
     // adding a minus sign, or not
     if (size > 1) {
-        if (boolean_chooser(random_generator)) {
+        if (boolean_chooser(generation_random_generator)) {
             json[0] = '-';
             first_digit_position = 1;
         }
@@ -185,9 +209,9 @@ int RandomJson::add_number(char* json, int max_size)
     // adding a dot, or not.
     int dot_position = first_digit_position; 
     if (size-first_digit_position > 3) { // whether there is enough space or not
-        if (boolean_chooser(random_generator)) { // whether we want it or not
+        if (boolean_chooser(generation_random_generator)) { // whether we want it or not
             std::uniform_int_distribution<int> dot_position_chooser(first_digit_position+1, size-2);
-            dot_position = dot_position_chooser(random_generator);
+            dot_position = dot_position_chooser(generation_random_generator);
             json[dot_position] = '.';
         }
     }
@@ -197,17 +221,17 @@ int RandomJson::add_number(char* json, int max_size)
     // removing any leading 0
     if (dot_position-first_digit_position != 1) {
         while (json[first_digit_position] == '0') {
-            json[first_digit_position] = digits[digit_chooser(random_generator)];
+            json[first_digit_position] = digits[digit_chooser(generation_random_generator)];
         }
     }
 
     // adding an exponent, or not
     if (size-dot_position > 3) { // whether there is enough space or not
-        if (boolean_chooser(random_generator)) { // whether we want it or not
+        if (boolean_chooser(generation_random_generator)) { // whether we want it or not
             std::uniform_int_distribution<int> exponent_position_chooser(dot_position+2, size-2);
-            int exponent_position = exponent_position_chooser(random_generator);
+            int exponent_position = exponent_position_chooser(generation_random_generator);
             // adding the exponent
-            switch (boolean_chooser(random_generator)) {
+            switch (boolean_chooser(generation_random_generator)) {
                 case 0:
                     json[exponent_position] = 'e';
                     break;
@@ -217,7 +241,7 @@ int RandomJson::add_number(char* json, int max_size)
             // if there is enough place to add a sign
             if (size-exponent_position > 2) {
                 std::uniform_int_distribution<int> sign_chooser(0, 2);
-                switch (sign_chooser(random_generator)) {
+                switch (sign_chooser(generation_random_generator)) {
                 case 0:
                     json[exponent_position+1] = '+';
                     break;
@@ -252,7 +276,7 @@ int RandomJson::add_string(char* json, int max_size)
     std::uniform_int_distribution<int> escaped_char_chooser(0, nb_escaped_char-1);
 
     std::uniform_int_distribution<int> size_chooser(min_size, max_size);
-    size = size_chooser(random_generator);
+    size = size_chooser(generation_random_generator);
 
     json[0] = '"';
     json[size-1] = '"';
@@ -265,11 +289,11 @@ int RandomJson::add_string(char* json, int max_size)
         int char_size;
         int char_type;
         if (i > 6) {
-            char_type = char_type_chooser(random_generator);
+            char_type = char_type_chooser(generation_random_generator);
         }
         else if (i > 4) {
             std::uniform_int_distribution<int> char_size_chooser(1, 4);
-            char_type = char_size_chooser(random_generator);
+            char_type = char_size_chooser(generation_random_generator);
         }
         else {
             char_type = i;
@@ -277,53 +301,53 @@ int RandomJson::add_string(char* json, int max_size)
         switch (char_type) {
         case 1: // One byte character
             do {
-                json[i] = random_generator() & 0b01111111;
+                json[i] = generation_random_generator() & 0b01111111;
             } while (json[i] == '"' || json[i] == '\\' || json[i] <= 0x1f);
             char_size = 1;
             break;
         case 2: // Two bytes character or escaped character
-            json[i-1] = random_generator();
+            json[i-1] = generation_random_generator();
             if (json[i-1] == '\\') {
-                json[i] = escaped_char[escaped_char_chooser(random_generator)];
+                json[i] = escaped_char[escaped_char_chooser(generation_random_generator)];
             }
             else {
                 json[i-1] = (json[i-1] | 0b11000000) & 0b11011111;
                 while (static_cast<unsigned char>(json[i-1]) <= static_cast<unsigned char>(0xc2)){
-                    json[i-1] = (random_generator() | 0b11000000) & 0b11011111;
+                    json[i-1] = (generation_random_generator() | 0b11000000) & 0b11011111;
                 }
-                json[i] = (random_generator() | 0b10000000) & 0b10111111;
+                json[i] = (generation_random_generator() | 0b10000000) & 0b10111111;
             }
             char_size = 2;
             break;
         case 3: // Three bytes character
-            json[i-2] = (random_generator() | 0b11100000) & 0b11101111;
-            json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
-            json[i] = (random_generator() | 0b10000000) & 0b10111111;
+            json[i-2] = (generation_random_generator() | 0b11100000) & 0b11101111;
+            json[i-1] = (generation_random_generator() | 0b10000000) & 0b10111111;
+            json[i] = (generation_random_generator() | 0b10000000) & 0b10111111;
             if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xe0)) {
                 while (static_cast<unsigned char>(json[i-1]) < static_cast<unsigned char>(0xa0)) {
-                    json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
+                    json[i-1] = (generation_random_generator() | 0b10000000) & 0b10111111;
                 }
             }
             else if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xed)) {
                 while (static_cast<unsigned char>(json[i-1]) > static_cast<unsigned char>(0x9f)) {
-                    json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
+                    json[i-1] = (generation_random_generator() | 0b10000000) & 0b10111111;
                 }
             }
             char_size = 3;
             break;
         case 4: // Four bytes character
-            json[i-3] = 0b11110000 + random_generator()%4;
-            json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
-            json[i-1] = (random_generator() | 0b10000000) & 0b10111111;
-            json[i] = (random_generator() | 0b10000000) & 0b10111111;
+            json[i-3] = 0b11110000 + generation_random_generator()%4;
+            json[i-2] = (generation_random_generator() | 0b10000000) & 0b10111111;
+            json[i-1] = (generation_random_generator() | 0b10000000) & 0b10111111;
+            json[i] = (generation_random_generator() | 0b10000000) & 0b10111111;
             if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf0)) {
                 while (static_cast<unsigned char>(json[i-2]) < static_cast<unsigned char>(0x90)) {
-                    json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
+                    json[i-2] = (generation_random_generator() | 0b10000000) & 0b10111111;
                 }
             }
             else if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf4)) {
                 while (static_cast<unsigned char>(json[i-2]) > static_cast<unsigned char>(0x8f)) {
-                    json[i-2] = (random_generator() | 0b10000000) & 0b10111111;
+                    json[i-2] = (generation_random_generator() | 0b10000000) & 0b10111111;
                 }
             }
             char_size = 4;
@@ -331,10 +355,10 @@ int RandomJson::add_string(char* json, int max_size)
         case 5: // codepoint
             json[i-5] = '\\';
             json[i-4] = 'u';
-            json[i-3] = hexa_digits[hexa_digit_chooser(random_generator)];
-            json[i-2] = hexa_digits[hexa_digit_chooser(random_generator)];
-            json[i-1] = hexa_digits[hexa_digit_chooser(random_generator)];
-            json[i] = hexa_digits[hexa_digit_chooser(random_generator)];
+            json[i-3] = hexa_digits[hexa_digit_chooser(generation_random_generator)];
+            json[i-2] = hexa_digits[hexa_digit_chooser(generation_random_generator)];
+            json[i-1] = hexa_digits[hexa_digit_chooser(generation_random_generator)];
+            json[i] = hexa_digits[hexa_digit_chooser(generation_random_generator)];
             char_size = 6;
             break;
         }
@@ -430,7 +454,7 @@ int RandomJson::add_value(char* json, std::stack<char>& closing_stack, std::stac
 
     // the number associated to the type is arbitrary
     std::uniform_int_distribution<int> value_type_chooser(0, 2);
-    switch (value_type_chooser(random_generator)) {
+    switch (value_type_chooser(generation_random_generator)) {
     case 0:
         size = init_object_or_array(json, closing_stack, use_comma, max_size);
         break;
@@ -462,7 +486,7 @@ int RandomJson::init_object_or_array(char* json, std::stack<char>& closing_stack
         return size;
     }
     
-    if (boolean_chooser(random_generator)) {
+    if (boolean_chooser(generation_random_generator)) {
         json[0] = '[';
         closing_stack.push(']');
     }
@@ -480,7 +504,7 @@ int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_sta
 {
     const int magic_closer = 0x40000000;
     int size = 0;
-    if (closing_stack.size() > 1 && magic_closer >= random_generator()) {
+    if (closing_stack.size() > 1 && magic_closer >= generation_random_generator()) {
         json[0] = closing_stack.top();
         closing_stack.pop();
         use_comma.pop();
@@ -500,7 +524,7 @@ int RandomJson::add_randomsized_whitespace(char* json, int max_size)
 
     max_size = std::min(max_size, max_whitespace_size);
     std::uniform_int_distribution<int> size_chooser(min_size, max_size);
-    size = size_chooser(random_generator);
+    size = size_chooser(generation_random_generator);
     add_whitespace(json, size);
 
     return size;
@@ -512,16 +536,26 @@ void RandomJson::add_whitespace(char* json, int size)
     std::uniform_int_distribution<char> char_chooser(0, 3);
 
     for (int i = 0; i < size; i++) {
-        json[i] = whitespaces[char_chooser(random_generator)];
+        json[i] = whitespaces[char_chooser(generation_random_generator)];
     }
+}
+
+void RandomJson::generate() {
+    int offset = 0;
+    if (bom) {
+        offset = add_BOM(json);
+    }
+    generate_json(&json[offset], size-offset);
+    generation_random_generator.seed(generation_seed);
+    mutation_random_generator.seed(mutation_seed);
+    number_of_mutations = 0;
+    provenance_type = ProvenanceType::seed;
+    attributes_changed = false;
 }
 
 void RandomJson::generate_json(char* json, int size)
 {
     int offset = 0;
-    if (BOM_is_activated) {
-        offset = randomly_add_BOM(json);
-    }
     std::stack<char> closing_stack; // Used to keep track of the structure we're in
     std::stack<bool> use_comma; // Used to keep track if a comma is necessary or not
 
@@ -560,6 +594,7 @@ void RandomJson::generate_json(char* json, int size)
 }
 
 void RandomJson::mutate() {
+    number_of_mutations++;
     char opening_bracket;
     int opening_bracket_position = -1;
     char closing_bracket;
@@ -568,7 +603,7 @@ void RandomJson::mutate() {
 
     // finding a random opening bracket
     std::uniform_int_distribution<int> position_chooser(0, size);
-    int position = position_chooser(random_generator);    
+    int position = position_chooser(mutation_random_generator);    
     while (position < size-1) {
         switch (json[position]) {
             case '{':
@@ -612,19 +647,6 @@ void RandomJson::mutate() {
     }
 }
 
-char* RandomJson::get_json() {
-    return json;
-}
-
-int RandomJson::get_size() {
-    return size;
-}
-
-void RandomJson::set_size(int new_size) {
-    size = new_size;
-    json = new char[size];
-}
-
 void RandomJson::save(std::string file_name)
 {
     std::fstream file(file_name, std::ios::out | std::ios::binary);
@@ -632,25 +654,69 @@ void RandomJson::save(std::string file_name)
     file.close();
 }
 
-void RandomJson::set_seed(int new_seed)
+/*
+** Getters and setters 
+*/
+char* const RandomJson::get_json()
 {
-    seed = new_seed;
-    random_generator.seed(new_seed);
+    return json;
 }
 
-int RandomJson::get_seed()
+int RandomJson::get_size()
 {
-    return seed;
+    return size;
 }
 
-void RandomJson::activate_BOM()
+void RandomJson::set_size(int new_size)
 {
-    BOM_is_activated = true;
+    size = new_size;
+    json = new char[size];
+    attributes_changed = true;
 }
 
-void RandomJson::deactivate_BOM()
+int RandomJson::get_number_of_mutations()
 {
-    BOM_is_activated = false;
+    return number_of_mutations;
+}
+
+void RandomJson::set_generation_seed(int new_generation_seed)
+{
+    generation_seed = new_generation_seed;
+    generation_random_generator.seed(new_generation_seed);
+    attributes_changed = true;
+}
+
+// The generation seed has no meaning if the json is from a file
+int RandomJson::get_generation_seed()
+{
+    return generation_seed;
+}
+
+void RandomJson::set_mutation_seed(int new_mutation_seed)
+{
+    mutation_seed = new_mutation_seed;
+    mutation_random_generator.seed(new_mutation_seed);
+    attributes_changed = true;
+}
+
+int RandomJson::get_mutation_seed()
+{
+    return mutation_seed;
+}
+
+bool RandomJson::infos_correspond_to_json()
+{
+    return attributes_changed;
+}
+
+ProvenanceType RandomJson::get_provenance_type()
+{
+    return provenance_type;
+}
+
+std::string RandomJson::get_filename()
+{
+    return filename;
 }
 
 }
