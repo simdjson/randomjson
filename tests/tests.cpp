@@ -25,17 +25,14 @@ void test_parse_simdjson(char* const json, int size) {
 }
 
 int main(int argc, char** argv) {
-    const int default_size = 1000;
-    int size = default_size;
+    int size = 1000;
     if (argc > 1) {
         size = std::stoi(argv[1]);
     }
 
     randomjson::RandomJson random_json(size);
-    random_json.save("test1.json");
-    random_json.generate();
-    std::cout << "seed: " << random_json.get_generation_seed() << std::endl;
-    random_json.save("test2.json");
+    random_json.save("test.json");
+    std::cout << "seed" << random_json.get_generation_seed() << std::endl;
     test_utf8(random_json.get_json(), random_json.get_size());
     test_parse_simdjson(random_json.get_json(), random_json.get_size());
     return 0;
