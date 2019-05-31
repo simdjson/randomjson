@@ -128,21 +128,6 @@ uint64_t RandomEngine::next()
     return m2;
 }
 
-char RandomEngine::next_char_digit()
-{
-    const char digits[] = "0123456789";
-    int position = next_ranged_int(0, 9);
-    return digits[position];
-}
-
-char RandomEngine::next_escaped_char()
-{
-    const char escaped_char[] = "\"\\bfnrt";
-    const int nb_escaped_char = 7;
-    int position = next_ranged_int(0, nb_escaped_char-1);
-    return escaped_char[position];
-}
-
 char RandomEngine::next_hexa_digit()
 {
     const char hexa_digits[] = "0123456789ABCDEFabcdef";
@@ -171,7 +156,7 @@ RandomJson::RandomJson()
 , attributes_changed(true)
 , max_number_range(308)
 , max_number_size(5)
-, max_string_size(24)
+, max_string_size(2048)
 , max_whitespace_size(24)
 , max_depth(1024)
 , chances_have_BOM(0)
@@ -254,6 +239,12 @@ int RandomJson::add_integer(char* json, int max_size, RandomEngine& random_gener
     }
 
     int number = random_generator.next_int();
+
+    // preventing single minus sign
+    if (max_size == min_size && number < 0) {
+        number = -number;
+    }
+
     std::string string_number = std::to_string(number);
     size = std::min(static_cast<int>(string_number.size()), max_size);
     for (int i = 0; i < size; i++) {
@@ -366,8 +357,89 @@ int RandomJson::add_number(char* json, int max_size, RandomEngine& random_genera
     return size;
 }
 
-int RandomJson::add_string(char* json, int max_size, RandomEngine& random_generator)
-{
+int add_escaped_codepoint(char* json, int max_size, RandomEngine& random_generator) {
+    const char hexa_digits[] = "0123456789ABCDEF0123456789abcdef";
+    const int min_size = 4;
+    int size = 0;
+    if (min_size > max_size) {
+        return size;
+    }
+
+    // multi purpose random bits
+    uint64_t random_bits = random_generator.next();
+    uint16_t wanabe_codepoint = random_bits & 0xffff;
+
+    bool is_low_surrogate = false;
+    bool is_high_surrogate = false;
+
+    // will be use if the first codepoint is the part of a surrogate pair
+    uint16_t second_wanabe_codepoint;
+
+    // checking if we have a surrogate pair
+    if (0xd800 <= wanabe_codepoint && wanabe_codepoint <= 0xdbff) {
+        is_high_surrogate = true;
+    }
+    else if (0xdc00 <= wanabe_codepoint && wanabe_codepoint <= 0xdfff) {
+        is_low_surrogate = true;
+        second_wanabe_codepoint = wanabe_codepoint;
+    }
+
+    // checking if we have enough place for the surrogate we may have
+    const int surrogate_pair_size = 10;
+    bool surrogate_pair_allowed = (max_size >= surrogate_pair_size) ? true : false;
+    if (!surrogate_pair_allowed && (is_high_surrogate || is_low_surrogate)) {
+        // don't have enough space for a surrogate pair
+        return size;
+    }
+
+    // if we have a part of a surrogate pair, we generate the other part
+    if (is_high_surrogate) {
+        second_wanabe_codepoint = random_generator.next_ranged_int(0xdc00, 0xdfff);
+    }
+    else if (is_low_surrogate) {
+        wanabe_codepoint = random_generator.next_ranged_int(0xd800, 0xdbff);
+    }
+
+    // will be used to randomlychose between capital or minuscule hexa digit
+    random_bits >>= 16;
+
+    // adding codepoint
+    json[3] = hexa_digits[(wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+    wanabe_codepoint >>= 4;
+    random_bits >>= 1;
+    json[2] = hexa_digits[(wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+    wanabe_codepoint >>= 4;
+    random_bits >>= 1;
+    json[1] = hexa_digits[(wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+    wanabe_codepoint >>= 4;
+    random_bits >>= 1;
+    json[0] = hexa_digits[(wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+
+    // adding second surrogate or not
+    if (is_high_surrogate || is_low_surrogate) {
+        json[4] = '\\';
+        json[5] = 'u';
+        json[9] = hexa_digits[(second_wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+        second_wanabe_codepoint >>= 4;
+        random_bits >>= 1;
+        json[8] = hexa_digits[(second_wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+        second_wanabe_codepoint >>= 4;
+        random_bits >>= 1;
+        json[7] = hexa_digits[(second_wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+        second_wanabe_codepoint >>= 4;
+        random_bits >>= 1;
+        json[6] = hexa_digits[(second_wanabe_codepoint & 0xf) + (random_bits & 0x10)];
+        
+        size = surrogate_pair_size;
+    }
+    else {
+        size = min_size;
+    }
+
+    return size;
+}
+
+int RandomJson::add_string(char* json, int max_size, RandomEngine& random_generator) {
     int min_size = 2;
     int size = 0;
     if (min_size > max_size) {
@@ -376,96 +448,119 @@ int RandomJson::add_string(char* json, int max_size, RandomEngine& random_genera
 
     max_size = std::min(max_size, max_string_size);
 
-    size = random_generator.next_ranged_int(min_size, max_size);
+    int offset = 0;
+    json[offset] = '"';
+    offset++;
 
-    json[0] = '"';
-    json[size-1] = '"';
+    bool s = false;
+    bool closed = false;
+    int remaining_size;
+    unsigned char* ujson = reinterpret_cast<unsigned char*>(json); // won't have to cast all the time
+    while ((remaining_size = max_size - offset -1) > 0) {
+        json[offset] = random_generator.next_char();
 
-    // Numbers associated to types are arbitrary
-
-    int i = size-min_size;
-    while (i > 0) {
-        int char_size;
-        int char_type;
-        if (i > 6) {
-            //char_type = random_generator.next_ranged_int(1, 5);
-            char_type = random_generator.next_ranged_int(1, 4);
-        }
-        else if (i > 4) {
-            char_type = random_generator.next_ranged_int(1, 4);
-        }
-        else {
-            char_type = i;
-        }
-        switch (char_type) {
-        case 1: // One byte character
-            do {
-                json[i] = random_generator.next_char() & 0b01111111;
-            } while (json[i] == '"' || json[i] == '\\' || json[i] <= 0x1f);
-            char_size = 1;
+        // Closing quote. We close the string.
+        if (json[offset] == '"') {
+            offset++;
+            closed = true;
             break;
-        case 2: // Two bytes character or escaped character
-            json[i-1] = random_generator.next_char();
-            if (json[i-1] == '\\') {
-                json[i] = random_generator.next_escaped_char();
+        }
+
+        // trying to add escaped stuff
+        if (json[offset] == '\\') {
+            const int min_escaped_size = 2;
+            if (remaining_size < min_escaped_size) {
+                continue;
+            }
+            const char escaped_char[] = "\"\\bfnrtu";
+            const int nb_escaped_char = 8;
+            int position = random_generator.next_ranged_int(0, nb_escaped_char-1);
+            json[offset+1] = escaped_char[position];
+
+            if (json[offset+1] == 'u') {
+                int size = add_escaped_codepoint(&json[offset+min_escaped_size], remaining_size-2, random_generator);
+                if (size == 0) {
+                    continue;
+                }
+                offset += size + min_escaped_size;
             }
             else {
-                json[i-1] = (json[i-1] | 0b11000000) & 0b11011111;
-                while (static_cast<unsigned char>(json[i-1]) <= static_cast<unsigned char>(0xc2)){
-                    json[i-1] = (random_generator.next_char() | 0b11000000) & 0b11011111;
-                }
-                json[i] = (random_generator.next_char() | 0b10000000) & 0b10111111;
+                offset += min_escaped_size;
             }
-            char_size = 2;
-            break;
-        case 3: // Three bytes character
-            json[i-2] = (random_generator.next_char() | 0b11100000) & 0b11101111;
-            json[i-1] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-            json[i] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-            if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xe0)) {
-                while (static_cast<unsigned char>(json[i-1]) < static_cast<unsigned char>(0xa0)) {
-                    json[i-1] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-                }
-            }
-            else if (static_cast<unsigned char>(json[i-2]) == static_cast<unsigned char>(0xed)) {
-                while (static_cast<unsigned char>(json[i-1]) > static_cast<unsigned char>(0x9f)) {
-                    json[i-1] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-                }
-            }
-            char_size = 3;
-            break;
-        case 4: // Four bytes character
-            json[i-3] = 0b11110000 | random_generator.next_ranged_int(0, 4);
-            json[i-2] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-            json[i-1] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-            json[i] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-            if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf0)) {
-                while (static_cast<unsigned char>(json[i-2]) < static_cast<unsigned char>(0x90)) {
-                    json[i-2] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-                }
-            }
-            else if (static_cast<unsigned char>(json[i-3]) == static_cast<unsigned char>(0xf4)) {
-                while (static_cast<unsigned char>(json[i-2]) > static_cast<unsigned char>(0x8f)) {
-                    json[i-2] = (random_generator.next_char() | 0b10000000) & 0b10111111;
-                }
-            }
-            char_size = 4;
-            break;
-        case 5: // codepoint
-            json[i-5] = '\\';
-            json[i-4] = 'u';
-            json[i-3] = random_generator.next_hexa_digit();
-            json[i-2] = random_generator.next_hexa_digit();
-            json[i-1] = random_generator.next_hexa_digit();
-            json[i] = random_generator.next_hexa_digit();
-            char_size = 6;
-            break;
+            continue;
+            
         }
 
-        i -= char_size;
+        // one byte character
+        if (0x20 <= ujson[offset] && ujson[offset] <= 0x7f) {
+            offset++;
+            continue;
+        }
+
+        // two bytes character
+        if (0xc2 <= ujson[offset] && ujson[offset] <= 0xdf) {
+            const int char_size = 2;
+            if (remaining_size < char_size) {
+                continue;
+            }
+            json[offset+1] = random_generator.next_ranged_int(0x80, 0xbf);
+            offset += char_size;
+            continue;
+        }
+
+        // three bytes character
+        if (0xec <= ujson[offset] && ujson[offset] <= 0xef) {
+            const int char_size = 3;
+            if (remaining_size < char_size) {
+                continue;
+            }
+            if (ujson[offset] == 0xed) {
+                json[offset+1] = random_generator.next_ranged_int(0x80, 0x9f);
+            }
+            else {
+                json[offset+1] = random_generator.next_ranged_int(0x80, 0xbf);
+            }
+            json[offset+2] = random_generator.next_ranged_int(0x80, 0xbf);
+
+            offset += char_size;
+            continue;
+        }
+
+        // four bytes character
+        if (0xf0 <= ujson[offset] && ujson[offset] <= 0xf4) {
+            const int char_size = 4;
+            if (remaining_size < char_size) {
+                continue;
+            }
+
+            if (ujson[offset] == 0xf0) {
+                json[offset+1] = random_generator.next_ranged_int(0x90, 0xbf);
+            }
+            else if (ujson[offset] == 0xf4) {
+                json[offset+1] = random_generator.next_ranged_int(0x80, 0x8f);
+            }
+            else { // 0xf1 >= ujson[offset] <= 0xf3
+                json[offset+1] = random_generator.next_ranged_int(0x80, 0xbf);
+            }
+
+            json[offset+2] = random_generator.next_ranged_int(0x80, 0xbf);
+            json[offset+3] = random_generator.next_ranged_int(0x80, 0xbf);
+            
+            offset += char_size;
+            continue;
+        }
+
     }
 
-    return size;
+    // If the string has not randomly close by itself, we close it.
+    if (!closed) {
+        json[offset] = '"';
+        offset++;
+    }
+
+    size = offset;
+
+    return offset;
 }
 
 int RandomJson::add_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator)
