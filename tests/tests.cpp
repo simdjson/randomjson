@@ -4,7 +4,7 @@
 #include "simdjson.h"
 #include "simdjson.cpp"
 
-// There is a conflict with simdjson.cpp because it contains simdutf8checks.
+// Namespace to prevent a conflict with simdjson.cpp because it contains simdutf8checks.
 namespace simdutf8check {
 #include "simdutf8check.h"
 }
@@ -29,8 +29,9 @@ int main(int argc, char** argv) {
     if (argc > 1) {
         size = std::stoi(argv[1]);
     }
-
     randomjson::RandomJson random_json(size);
+    //randomjson::RandomJson random_json(size, 320467210);
+    //randomjson::RandomJson random_json(100000, -1364506741);
     random_json.save("test.json");
     std::cout << "seed" << random_json.get_generation_seed() << std::endl;
     test_utf8(random_json.get_json(), random_json.get_size());

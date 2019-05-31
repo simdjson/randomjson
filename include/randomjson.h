@@ -16,11 +16,11 @@ enum class ProvenanceType {
 class RandomEngine {
     public:
     void seed(int new_seed);
-    uint64_t uint64();
-    bool next_bool() { return static_cast<bool>(uint64() & 1); }
-    int next_int() { return static_cast<int>(uint64()); }
-    char next_char() { return static_cast<char>(uint64()); }
-    double next_double() { return static_cast<double>(uint64()); }
+    uint64_t next();
+    bool next_bool() { return static_cast<bool>(next() & 1); }
+    int next_int() { return static_cast<int>(next()); }
+    char next_char() { return static_cast<char>(next()); }
+    double next_double() { return static_cast<double>(next()); }
     char next_char_digit();
     char next_escaped_char();
     char next_hexa_digit();
@@ -65,6 +65,8 @@ class RandomJson {
     int add_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
     int add_object_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
     int add_number(char* json, int max_size, RandomEngine& random_generator);
+    int add_integer(char* json, int max_size, RandomEngine& random_generator);
+    int add_float(char* json, int max_size, RandomEngine& random_generator);
     int add_string(char* json, int max_size, RandomEngine& random_generator);
     void add_whitespace(char* json, int max_size, RandomEngine& random_generator);
     int add_randomsized_whitespace(char* json, int max_size, RandomEngine& random_generator);
@@ -115,7 +117,7 @@ void RandomEngine::seed(int new_seed)
     wyhash64_x_ = new_seed;
 }
 
-uint64_t RandomEngine::uint64()
+uint64_t RandomEngine::next()
 {
     wyhash64_x_ += UINT64_C(0x60bee2bee120fc15);
     __uint128_t tmp;
@@ -155,7 +157,7 @@ int RandomEngine::next_ranged_int(int min, int max)
         return min;
     }
     int range = max-min+1;
-    uint64_t random_number = uint64();
+    uint64_t random_number = next();
     return random_number%range + min;
 }
 
@@ -167,9 +169,9 @@ RandomJson::RandomJson()
 , mutation_seed(0)
 , bom(false)
 , attributes_changed(true)
-, max_number_range(32)
+, max_number_range(308)
 , max_number_size(5)
-, max_string_size(1024)
+, max_string_size(24)
 , max_whitespace_size(24)
 , max_depth(1024)
 , chances_have_BOM(0)
@@ -243,6 +245,106 @@ int RandomJson::add_BOM(char* json)
     return size;
 }
 
+int RandomJson::add_integer(char* json, int max_size, RandomEngine& random_generator)
+{
+    const int min_size = 1;
+    int size = 0;
+    if (min_size > max_size) {
+        return size;
+    }
+
+    int number = random_generator.next_int();
+    std::string string_number = std::to_string(number);
+    size = std::min(static_cast<int>(string_number.size()), max_size);
+    for (int i = 0; i < size; i++) {
+        json[i] = string_number.at(i);
+    }
+    return size;
+}
+
+int RandomJson::add_float(char* json, int max_size, RandomEngine& random_generator)
+{
+    const int min_size = 3;
+    int size = 0;
+    if (min_size > max_size) {
+        return size;
+    }
+
+    uint64_t significant = random_generator.next();
+    int offset = 0;
+
+    // trying to add a minus sign    
+    const int required_space_for_sign = 2; // minus + digit
+    if (max_size >= required_space_for_sign && random_generator.next_bool()) {
+        json[offset] = '-';
+        offset++;
+    }
+
+    std::string string_significant = std::to_string(significant);
+
+    // trying to add a dot
+    int dot_position = 0;
+    const int required_space_for_dot = 3; // one digit + dot + one digit
+    if (max_size - offset >= required_space_for_dot) {
+        dot_position = random_generator.next_ranged_int(0, string_significant.size()-1);
+        if (dot_position < string_significant.size()-1) { // so there's a change we don't add a dot
+            if (dot_position == 0) {
+                string_significant.at(0) = '0';
+                string_significant.at(1) = '.';
+            }
+            else {
+                string_significant.at(dot_position) = '.';
+            }
+        }
+    }
+
+    // adding all we can add of the significant
+    int space_for_significant = std::min(static_cast<int>(string_significant.size()), max_size - offset);
+    for (int i = 0; i < space_for_significant; i++) {
+        json[offset] = string_significant.at(i);
+        offset++;
+    }
+
+    int exponent = random_generator.next_ranged_int(0, max_number_range-dot_position);
+    std::string string_exponent = std::to_string(exponent);
+
+    // trying to add the exponent
+    const int required_space_for_exponent = 2; // e + one digit
+    if (max_size - offset >= required_space_for_exponent) {
+        switch (random_generator.next_bool()) {
+            case true: json[offset] = 'e'; break;
+            case false: json[offset] = 'E'; break;
+        }
+        offset++;
+
+        // trying to add a sign
+        if (max_size - offset >= required_space_for_sign) {
+            switch (random_generator.next_ranged_int(0,2)) {
+                case 0:
+                    break;
+                case 1:
+                    json[offset] = '-';
+                    offset++;
+                    break;
+                case 2:
+                    json[offset] = '+';
+                    offset++;
+                    break;
+            }
+        }
+
+        int space_for_exponent = std::min(static_cast<int>(string_exponent.size()), max_size - offset);
+        for (int i = 0; i < space_for_exponent; i++) {
+            json[offset] = string_exponent.at(i);
+            offset++;
+        }
+    }
+    
+    size = offset;
+
+    return size;
+}
+
 int RandomJson::add_number(char* json, int max_size, RandomEngine& random_generator)
 {
     const int min_size = 1;
@@ -251,70 +353,16 @@ int RandomJson::add_number(char* json, int max_size, RandomEngine& random_genera
         return size;
     }
 
-    max_size = std::min(max_size, max_number_size);
-
-    size = random_generator.next_ranged_int(min_size, max_size);
-
-    for (int i = 0; i < size; i++) {
-        json[i] = random_generator.next_char_digit();
+    // boolean used to choose between to cases. No truthness involved.
+    switch (random_generator.next_bool()) {
+        case true:
+            size = add_float(json, max_size, random_generator);
+            break;
+        case false:
+            size = add_integer(json, max_size, random_generator);
+            break;
     }
 
-    int first_digit_position = 0;
-
-    // adding a minus sign, or not
-    if (size > 1) {
-        if (random_generator.next_bool()) {
-            json[0] = '-';
-            first_digit_position = 1;
-        }
-    }
-    // adding a dot, or not.
-    int dot_position = first_digit_position; 
-    if (size-first_digit_position > 3) { // whether there is enough space or not
-        if (random_generator.next_bool()) { // whether we want it or not
-            dot_position = random_generator.next_ranged_int(first_digit_position+1, size-2);
-            json[dot_position] = '.';
-        }
-    }
-
-    // if dot_position still equals first_digit_position, then there is no dot
-
-    // removing any leading 0
-    if (dot_position-first_digit_position != 1) {
-        while (json[first_digit_position] == '0') {
-            json[first_digit_position] = random_generator.next_char_digit();
-        }
-    }
-
-    // adding an exponent, or not
-    if (size-dot_position > 3) { // whether there is enough space or not
-        if (random_generator.next_bool()) { // wether we want it or not
-            int exponent_position = random_generator.next_ranged_int(dot_position+2, size-2);
-            // adding the exponent
-            switch (random_generator.next_bool()) {
-                case true:
-                    json[exponent_position] = 'e';
-                    break;
-                case false:
-                    json[exponent_position] = 'E';
-            }
-            // if there is enough place to add a sign
-            if (size-exponent_position > 2) {
-                // random exponent sign type
-                switch (random_generator.next_ranged_int(0, 2)) {
-                case 0:
-                    json[exponent_position+1] = '+';
-                    break;
-                case 1:
-                    json[exponent_position+1] = '-';
-                    break;
-                default:
-                    // no sign
-                    break;
-                }
-            }
-        }
-    }
     return size;
 }
 
@@ -340,7 +388,8 @@ int RandomJson::add_string(char* json, int max_size, RandomEngine& random_genera
         int char_size;
         int char_type;
         if (i > 6) {
-            char_type = random_generator.next_ranged_int(1, 5);
+            //char_type = random_generator.next_ranged_int(1, 5);
+            char_type = random_generator.next_ranged_int(1, 4);
         }
         else if (i > 4) {
             char_type = random_generator.next_ranged_int(1, 4);
