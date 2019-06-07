@@ -277,7 +277,8 @@ int RandomJson::add_float(char* json, int max_size, RandomEngine& random_generat
     int dot_position = 0;
     const int required_space_for_dot = 3; // one digit + dot + one digit
     if (max_size - offset >= required_space_for_dot) {
-        dot_position = random_generator.next_ranged_int(0, string_significant.size()-1);
+        int max_dot_position = std::min(static_cast<int>(string_significant.size())-1, max_size - offset - 2); // a dot can't end a number
+        dot_position = random_generator.next_ranged_int(0, max_dot_position);
         if (dot_position < string_significant.size()-1) { // so there's a change we don't add a dot
             if (dot_position == 0) {
                 string_significant.at(0) = '0';
@@ -288,7 +289,7 @@ int RandomJson::add_float(char* json, int max_size, RandomEngine& random_generat
             }
         }
     }
-
+    std::cout << string_significant << std::endl;
     // adding all we can add of the significant
     int space_for_significant = std::min(static_cast<int>(string_significant.size()), max_size - offset);
     for (int i = 0; i < space_for_significant; i++) {
