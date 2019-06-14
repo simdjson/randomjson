@@ -8,85 +8,58 @@
 #include <stdint.h>
 
 namespace randomjson {
-enum class ProvenanceType {
-    file,
-    seed
-};
 
 class RandomEngine {
     public:
-    void seed(int new_seed);
-    uint64_t next();
+    void seed(int new_seed) {
+        seed_ = new_seed;
+        wyhash64_x_ = new_seed;
+    };
+    uint64_t next() {
+        // Adaptated from https://github.com/wangyi-fudan/wyhash/blob/master/wyhash.h
+        // Inspired from https://github.com/lemire/testingRNG/blob/master/source/wyhash.h
+        wyhash64_x_ += UINT64_C(0x60bee2bee120fc15);
+        __uint128_t tmp;
+        tmp = (__uint128_t) wyhash64_x_ * UINT64_C(0xa3b195354a39b70d);
+        uint64_t m1 = (tmp >> 64) ^ tmp;
+        tmp = (__uint128_t) m1 * UINT64_C(0x1b03738712fad5c9);
+        uint64_t m2 = (tmp >> 64) ^ tmp;
+        return m2;
+    }
     bool next_bool() { return (next() & 1) == 1; }
     int next_int() { return static_cast<int>(next()); }
     char next_char() { return static_cast<char>(next()); }
     double next_double() { return static_cast<double>(next()); }
-    int next_ranged_int(int min, int max);
+    int next_ranged_int(int min, int max) {
+            if (min == max) {
+            return min;
+        }
+        int range = max-min+1;
+        uint64_t random_number = next();
+        return random_number%range + min;
+    }
 
     private:
     uint64_t seed_;
     uint64_t wyhash64_x_;
 };
 
-class RandomJson {
-    public:
-    RandomJson(); // must be configurated munually
-    RandomJson(int size); // automatically generates json
-    RandomJson(int size, int seed); // automatically generates json with given seed
-    RandomJson(std::string file); // from file for mutation
-    ~RandomJson();
-
-    void generate();
-    void mutate();
-    void save(std::string file_name);
-
-    // getters and setters
-    char* const get_json();
-    int get_size();
-    void set_size(int new_size);
-    void set_generation_seed(int new_generation_seed);
-    int get_generation_seed();
-    void set_mutation_seed(int new_mutation_seed);
-    int get_mutation_seed();
-    int get_number_of_mutations();
-    bool infos_correspond_to_json();
-    ProvenanceType get_provenance_type();
-    std::string get_filename();
-
-    private:
-    void generate_json(char* json, int size, RandomEngine& random_generator);
-    int insert_BOM(char* json);
-    int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
-    int randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, RandomEngine& random_generator);
-    int insert_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
-    int insert_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
-    int insert_object_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
-    int insert_number(char* json, int max_size, RandomEngine& random_generator);
-    int insert_integer(char* json, int max_size, RandomEngine& random_generator);
-    int insert_float(char* json, int max_size, RandomEngine& random_generator);
-    int insert_string(char* json, int max_size, RandomEngine& random_generator);
-    void insert_whitespace(char* json, int max_size, RandomEngine& random_generator);
-    int insert_randomsized_whitespace(char* json, int max_size, RandomEngine& random_generator);
-
-    ProvenanceType provenance_type;
-    char* json;
+struct RandomJsonSettings {
+    // If filepath is different than an empty string, RandomJson will load from the corresponding file.
+    // That means the json document won't be randomly generated.
+    // That implies the generation_seed won't be used and the size will be adjusted to the file's size.
+    // The other options will be used for the mutations, but they will not correspond to the original document.
+    std::string filepath;
     int size;
+    int generation_seed = std::random_device{}();
+    int mutation_seed = std::random_device{}();
     int number_of_mutations;
-    int generation_seed;
-    int mutation_seed;
-    std::string filename;
-    bool bom;
-    bool attributes_changed;
-
-    RandomEngine generation_random;
-    RandomEngine mutation_random;
-
-    // options
-    int max_number_range; // Numbers will be smaller than 10^range
+    bool bom = false;
+    int max_number_range = 308; // Numbers will be smaller than 10^range
     int max_number_size; // in bytes and in length
-    int max_string_size; // in bytes
-    int max_whitespace_size; // in bytes and in length
-    int max_depth;
+    int max_string_size = 2048; // in bytes
+    int max_whitespace_size = 24; // in bytes and in length
+    int max_depth = 1024;
     float chances_have_BOM;
     float chances_over_max_number_range;
     float chances_over_max_number_size;
@@ -106,102 +79,92 @@ class RandomJson {
     float chances_generating_false;
     float chances_generating_true;
 
+    RandomJsonSettings() {}
+
+    RandomJsonSettings(int size)
+    : size(size)
+    {}
+
+    RandomJsonSettings(int size, int mutation_seed)
+    : size(size)
+    , mutation_seed(mutation_seed)
+    {}
+
+    RandomJsonSettings(std::string filepath)
+    : filepath(filepath)
+    {}
 };
 
-void RandomEngine::seed(int new_seed) 
-{
-    seed_ = new_seed;
-    wyhash64_x_ = new_seed;
-}
+class RandomJson {
+    public:
+    RandomJson(const RandomJsonSettings& settings);
+    ~RandomJson();
 
-uint64_t RandomEngine::next()
-{
-    wyhash64_x_ += UINT64_C(0x60bee2bee120fc15);
-    __uint128_t tmp;
-    tmp = (__uint128_t) wyhash64_x_ * UINT64_C(0xa3b195354a39b70d);
-    uint64_t m1 = (tmp >> 64) ^ tmp;
-    tmp = (__uint128_t) m1 * UINT64_C(0x1b03738712fad5c9);
-    uint64_t m2 = (tmp >> 64) ^ tmp;
-    return m2;
-}
+    void mutate();
+    void save(std::string file_name);
+    void load_settings(const RandomJsonSettings& new_settings);
 
-int RandomEngine::next_ranged_int(int min, int max)
+    // getters
+    const char* get_json();
+    int get_size();
+    int get_generation_seed();
+    int get_mutation_seed();
+    int get_number_of_mutations();
+    bool is_from_file();
+    std::string get_filepath();
+
+    private:
+    // Generates an entire json document
+    void generate();
+    // Loads a json document from a file
+    void load_file(const std::string& filepath);
+    // Generates a valid json value taking exactly a given size (in bytes) on a given position.
+    // Function's name is poorly chosen.
+    void generate_json(char* json, int size, RandomEngine& random_generator);
+    // Inserts a BOM at the beginning of the json document.
+    int insert_BOM(char* json);
+    // Randomly inserts "{" or "[" in the document.
+    int init_object_or_array(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
+    // Randomly chooses to close or not to close the current container.
+    int randomly_close_bracket(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, RandomEngine& random_generator);
+    // Randomly inserts any json value
+    int insert_value(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
+    // Inserts a random array entry
+    int insert_array_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
+    // Inserts a random key followed by a random value.
+    int insert_object_entry(char* json, std::stack<char>& closing_stack, std::stack<bool>& use_comma, int max_size, RandomEngine& random_generator);
+    // Randomly chooses to insert a random integer or a random float
+    int insert_number(char* json, int max_size, RandomEngine& random_generator);
+    // Inserts a random integer
+    int insert_integer(char* json, int max_size, RandomEngine& random_generator);
+    // Inserts a random float
+    int insert_float(char* json, int max_size, RandomEngine& random_generator);
+    // inserts a random string
+    int insert_string(char* json, int max_size, RandomEngine& random_generator);
+    // Inserts a random sequence of whitespaces for a random size of bytes
+    int insert_whitespace(char* json, int max_size, RandomEngine& random_generator);
+    // Inserts a random sequences of whitespaces for a given size of bytes.
+    void insert_givensized_whitespace(char* json, int size, RandomEngine& random_generator);
+
+    char* json;
+
+    RandomEngine generation_random;
+    RandomEngine mutation_random;
+
+    RandomJsonSettings settings;
+};
+
+RandomJson::RandomJson(const RandomJsonSettings& settings)
+: settings(settings)
 {
-    if (min == max) {
-        return min;
+    generation_random.seed(settings.generation_seed);
+    mutation_random.seed(settings.mutation_seed);
+    if (settings.filepath != "") {
+        load_file(settings.filepath);
     }
-    int range = max-min+1;
-    uint64_t random_number = next();
-    return random_number%range + min;
-}
-
-RandomJson::RandomJson()
-: json(nullptr)
-, size(0)
-, number_of_mutations(0)
-, generation_seed(0)
-, mutation_seed(0)
-, bom(false)
-, attributes_changed(true)
-, max_number_range(308)
-, max_number_size(5)
-, max_string_size(2048)
-, max_whitespace_size(24)
-, max_depth(1024)
-, chances_have_BOM(0)
-, chances_over_max_number_range(0)
-, chances_over_max_number_size(0)
-, chances_over_max_string_size(0)
-, chances_over_max_whitespace_size(0)
-, chances_over_max_depth(0)
-, chances_invalid_comma(0)
-, chances_invalid_utf8(0)
-, chances_invalid_string(0)
-, chances_invalid_codepoint(0)
-, chances_invalid_number(0)
-, chances_generating_number(0)
-, chances_generating_string(0)
-, chances_generating_object(0)
-, chances_generating_array(0)
-, chances_generating_null(0)
-, chances_generating_false(0)
-, chances_generating_true(0)
-{
-}
-
-RandomJson::RandomJson(int size)
-: RandomJson::RandomJson(size, std::random_device{}())
-{
-}
-
-RandomJson::RandomJson(int size, int generation_seed)
-: RandomJson::RandomJson()
-{
-    this->size = size;
-    this->generation_seed = generation_seed;
-    mutation_seed = std::random_device{}();
-    generation_random.seed(generation_seed);
-    mutation_random.seed(mutation_seed);
-    json = new char[size];
-    generate();
-}
-
-RandomJson::RandomJson(std::string filename)
-: RandomJson::RandomJson()
-{
-    this->filename = filename;
-    provenance_type = ProvenanceType::file;
-    generation_seed = std::random_device{}();
-    mutation_seed = std::random_device{}();
-    generation_random.seed(generation_seed);
-    mutation_random.seed(mutation_seed);
-    std::ifstream file (filename, std::ios::in | std::ios::binary | std::ios::ate);
-    size = file.tellg();
-    json = new char[size];
-    file.seekg(0, std::ios::beg);
-    file.read(json, size);
-    file.close();
-    attributes_changed = false;
+    else {
+        generate();
+    }
 }
 
 RandomJson::~RandomJson()
@@ -234,6 +197,7 @@ int RandomJson::insert_integer(char* json, int max_size, RandomEngine& random_ge
         number = -number;
     }
 
+    // Inserting the most digits we can
     std::string string_number = std::to_string(number);
     size = std::min(static_cast<int>(string_number.size()), max_size);
     for (int i = 0; i < size; i++) {
@@ -267,7 +231,7 @@ int RandomJson::insert_float(char* json, int max_size, RandomEngine& random_gene
     bool dot_inserted = false;
     int max_dot_position = std::min(static_cast<int>(string_significant.size()), max_size - offset) - 1;
     dot_position = random_generator.next_ranged_int(0, max_dot_position);
-    if (dot_position < max_dot_position-1) { // A dot can't end a float. It is chance we don't insert a dot.
+    if (dot_position < max_dot_position-1) { // A dot can't end a float. We leave a chance to not insert a dot.
         if (dot_position == 0) {
             string_significant.at(0) = '0';
             string_significant.at(1) = '.';
@@ -287,7 +251,7 @@ int RandomJson::insert_float(char* json, int max_size, RandomEngine& random_gene
         offset++;
     }
 
-    int exponent = random_generator.next_ranged_int(0, max_number_range-dot_position);
+    int exponent = random_generator.next_ranged_int(0, settings.max_number_range-dot_position);
     std::string string_exponent = std::to_string(exponent);
 
     // trying to insert the exponent
@@ -317,6 +281,7 @@ int RandomJson::insert_float(char* json, int max_size, RandomEngine& random_gene
             }
         }
 
+        // Inserting the most digits we can for the exponent
         int space_for_exponent = std::min(static_cast<int>(string_exponent.size()), max_size - offset);
         for (int i = 0; i < space_for_exponent; i++) {
             json[offset] = string_exponent.at(i);
@@ -337,7 +302,7 @@ int RandomJson::insert_number(char* json, int max_size, RandomEngine& random_gen
         return size;
     }
 
-    // boolean used to choose between to cases. No truthness involved.
+    // boolean used to choose between two cases. No truthness involved.
     switch (random_generator.next_bool()) {
         case true:
             size = insert_float(json, max_size, random_generator);
@@ -393,7 +358,7 @@ int insert_escaped_codepoint(char* json, int max_size, RandomEngine& random_gene
         wanabe_codepoint = random_generator.next_ranged_int(0xd800, 0xdbff);
     }
 
-    // will be used to randomlychose between capital or minuscule hexa digit
+    // will be used to randomly chose between capital or minuscule hexa digit
     random_bits >>= 16;
 
     // inserting codepoint
@@ -439,7 +404,7 @@ int RandomJson::insert_string(char* json, int max_size, RandomEngine& random_gen
         return size;
     }
 
-    max_size = std::min(max_size, max_string_size);
+    max_size = std::min(max_size, settings.max_string_size);
 
     int offset = 0;
     json[offset] = '"';
@@ -542,7 +507,6 @@ int RandomJson::insert_string(char* json, int max_size, RandomEngine& random_gen
             offset += char_size;
             continue;
         }
-
     }
 
     // If the string has not randomly close by itself, we close it.
@@ -564,17 +528,18 @@ int RandomJson::insert_array_entry(char* json, std::stack<char>& closing_stack, 
         return size;
     }
 
-    int offset = insert_randomsized_whitespace(json, max_size, random_generator);
+    int offset = insert_whitespace(json, max_size, random_generator);
 
     if (use_comma.top()) {
         json[offset] = ',';
         offset++;
-        offset += insert_randomsized_whitespace(&json[offset], max_size-offset, random_generator);
+        offset += insert_whitespace(&json[offset], max_size-offset, random_generator);
     }
     
     int value_size = insert_value(&json[offset], closing_stack, use_comma, max_size-offset, random_generator);
 
-    // we make sure a value has been written
+    // We make sure a value has been successfully written
+    // Otherwise, we make sure to overwrite the invalid comma we might have inserted
     if (value_size == 0) {
         return size;
     }
@@ -595,7 +560,7 @@ int RandomJson::insert_object_entry(char* json, std::stack<char>& closing_stack,
         return size;
     }
     // Inserting whitespace before key or comma
-    int offset = insert_randomsized_whitespace(json, max_size - min_size, random_generator);
+    int offset = insert_whitespace(json, max_size - min_size, random_generator);
 
     // Inserting comma before key if necessary
     if (use_comma.top()) {
@@ -603,20 +568,20 @@ int RandomJson::insert_object_entry(char* json, std::stack<char>& closing_stack,
         offset++;
         min_size -= comma_length;
         // Inserting whitespace after comma
-        offset += insert_randomsized_whitespace(&json[offset], max_size - offset - min_size, random_generator);
+        offset += insert_whitespace(&json[offset], max_size - offset - min_size, random_generator);
     }
     // Inserting key
     min_size -= min_key_size;
     int key_size = insert_string(&json[offset], max_size - offset - min_size, random_generator);
     offset += key_size;
     // Inserting space after key and before colon
-    offset += insert_randomsized_whitespace(&json[offset], max_size - offset - min_size, random_generator);
+    offset += insert_whitespace(&json[offset], max_size - offset - min_size, random_generator);
     // Inserting colon
     json[offset] = ':';
     min_size -= colon_size;
     offset++;
     // Inserting whitespace after colon and before value
-    offset += insert_randomsized_whitespace(&json[offset], max_size - offset - min_size, random_generator);
+    offset += insert_whitespace(&json[offset], max_size - offset - min_size, random_generator);
     // Inserting value
     int value_size = insert_value(&json[offset], closing_stack, use_comma, max_size - offset, random_generator);
 
@@ -672,7 +637,7 @@ int RandomJson::init_object_or_array(char* json, std::stack<char>& closing_stack
         return size;
     }
 
-    if (closing_stack.size() >= max_depth-2) {
+    if (closing_stack.size() >= settings.max_depth-2) {
         return size;
     }
     
@@ -704,7 +669,7 @@ int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_sta
     return size;
 }
 
-int RandomJson::insert_randomsized_whitespace(char* json, int max_size, RandomEngine& random_generator)
+int RandomJson::insert_whitespace(char* json, int max_size, RandomEngine& random_generator)
 {
     const int min_size = 0;
     int size = 0;
@@ -712,14 +677,14 @@ int RandomJson::insert_randomsized_whitespace(char* json, int max_size, RandomEn
         return size;
     }
 
-    max_size = std::min(max_size, max_whitespace_size);
+    max_size = std::min(max_size, settings.max_whitespace_size);
     size = random_generator.next_ranged_int(min_size, max_size);
-    insert_whitespace(json, size, random_generator);
+    insert_givensized_whitespace(json, size, random_generator);
 
     return size;
 }
 
-void RandomJson::insert_whitespace(char* json, int size, RandomEngine& random_generator)
+void RandomJson::insert_givensized_whitespace(char* json, int size, RandomEngine& random_generator)
 {
     const char whitespaces[] {0x09, 0x0A, 0x0D, 0x20};
 
@@ -729,15 +694,23 @@ void RandomJson::insert_whitespace(char* json, int size, RandomEngine& random_ge
 }
 
 void RandomJson::generate() {
+    json = new char[settings.size];
     int offset = 0;
-    if (bom) {
+    if (settings.bom) {
         offset = insert_BOM(json);
     }
-    generate_json(&json[offset], size-offset, generation_random);
-    mutation_random.seed(mutation_seed);
-    number_of_mutations = 0;
-    provenance_type = ProvenanceType::seed;
-    attributes_changed = false;
+    generate_json(&json[offset], settings.size-offset, generation_random);
+    settings.filepath = "";
+}
+
+void RandomJson::load_file(const std::string& filepath) {
+    settings.filepath = filepath;
+    std::ifstream file (filepath, std::ios::in | std::ios::binary | std::ios::ate);
+    settings.size = file.tellg();
+    json = new char[settings.size];
+    file.seekg(0, std::ios::beg);
+    file.read(json, settings.size);
+    file.close();
 }
 
 void RandomJson::generate_json(char* json, int size, RandomEngine& random_generator)
@@ -746,7 +719,7 @@ void RandomJson::generate_json(char* json, int size, RandomEngine& random_genera
     std::stack<char> closing_stack; // Used to keep track of the structure we're in
     std::stack<bool> use_comma; // Used to keep track if a comma is necessary or not
 
-    offset += insert_randomsized_whitespace(&json[offset], size, random_generator);
+    offset += insert_whitespace(&json[offset], size, random_generator);
     offset += init_object_or_array(&json[offset], closing_stack,  use_comma, size-offset, random_generator);
     while (true) {
         if (offset >= size) {
@@ -760,7 +733,7 @@ void RandomJson::generate_json(char* json, int size, RandomEngine& random_genera
                 closing_stack.pop();
                 offset++;
             }
-            insert_whitespace(&json[offset], size-offset, random_generator);
+            insert_givensized_whitespace(&json[offset], size-offset, random_generator);
             break;
         }
         else if (space_left < 0) {
@@ -781,16 +754,16 @@ void RandomJson::generate_json(char* json, int size, RandomEngine& random_genera
 }
 
 void RandomJson::mutate() {
-    number_of_mutations++;
+    settings.number_of_mutations++;
     char opening_bracket;
     int opening_bracket_position = -1;
     char closing_bracket;
-    int closing_bracket_position = size-1;
+    int closing_bracket_position = settings.size-1;
     int brackets_to_close = 1;
 
     // finding a random opening bracket
-    int position = mutation_random.next_ranged_int(0, size);    
-    while (position < size-1) {
+    int position = mutation_random.next_ranged_int(0, settings.size);    
+    while (position < settings.size-1) {
         switch (json[position]) {
             case '{':
                 opening_bracket = '{';
@@ -812,7 +785,7 @@ void RandomJson::mutate() {
     }
     
     // finding the corresponding closing bracket
-    while (position < size-1) {
+    while (position < settings.size-1) {
         position++;
         if (json[position] == opening_bracket) {
             brackets_to_close++;
@@ -827,7 +800,7 @@ void RandomJson::mutate() {
     }
 
     // generating something random
-    if (closing_bracket_position < size) {
+    if (closing_bracket_position < settings.size) {
         int size = closing_bracket_position - opening_bracket_position + 1;
         generate_json(&json[opening_bracket_position], size, mutation_random);
     }
@@ -836,73 +809,60 @@ void RandomJson::mutate() {
 void RandomJson::save(std::string file_name)
 {
     std::fstream file(file_name, std::ios::out | std::ios::binary);
-    file.write(json, sizeof(char)*size);
+    file.write(json, sizeof(char)*settings.size);
     file.close();
 }
 
+void RandomJson::load_settings(const RandomJsonSettings& new_settings) {
+    // TODO: Find an intelligent way to reallocate memory only if necessary and not duplicate code
+    settings = new_settings;
+    generation_random.seed(settings.generation_seed);
+    mutation_random.seed(settings.mutation_seed);
+    if (settings.filepath != "") {
+        load_file(settings.filepath);
+    }
+    else {
+        generate();
+    }
+}
+
 /*
-** Getters and setters 
+** Getters
 */
-char* const RandomJson::get_json()
+const char* RandomJson::get_json()
 {
     return json;
 }
 
 int RandomJson::get_size()
 {
-    return size;
-}
-
-void RandomJson::set_size(int new_size)
-{
-    size = new_size;
-    json = new char[size];
-    attributes_changed = true;
+    return settings.size;
 }
 
 int RandomJson::get_number_of_mutations()
 {
-    return number_of_mutations;
-}
-
-void RandomJson::set_generation_seed(int new_generation_seed)
-{
-    generation_seed = new_generation_seed;
-    generation_random.seed(new_generation_seed);
-    attributes_changed = true;
+    return settings.number_of_mutations;
 }
 
 // The generation seed has no meaning if the json is from a file
 int RandomJson::get_generation_seed()
 {
-    return generation_seed;
-}
-
-void RandomJson::set_mutation_seed(int new_mutation_seed)
-{
-    mutation_seed = new_mutation_seed;
-    mutation_random.seed(new_mutation_seed);
-    attributes_changed = true;
+    return settings.generation_seed;
 }
 
 int RandomJson::get_mutation_seed()
 {
-    return mutation_seed;
+    return settings.mutation_seed;
 }
 
-bool RandomJson::infos_correspond_to_json()
+bool RandomJson::is_from_file()
 {
-    return attributes_changed;
+    return settings.filepath != "";
 }
 
-ProvenanceType RandomJson::get_provenance_type()
+std::string RandomJson::get_filepath()
 {
-    return provenance_type;
-}
-
-std::string RandomJson::get_filename()
-{
-    return filename;
+    return settings.filepath;
 }
 
 }
