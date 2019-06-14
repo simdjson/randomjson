@@ -50,34 +50,34 @@ struct RandomJsonSettings {
     // That implies the generation_seed won't be used and the size will be adjusted to the file's size.
     // The other options will be used for the mutations, but they will not correspond to the original document.
     std::string filepath;
-    int size;
+    int size = 0;
     int generation_seed = std::random_device{}();
     int mutation_seed = std::random_device{}();
-    int number_of_mutations;
+    int number_of_mutations = 0;
     bool bom = false;
     int max_number_range = 308; // Numbers will be smaller than 10^range
     int max_number_size; // in bytes and in length
     int max_string_size = 2048; // in bytes
     int max_whitespace_size = 24; // in bytes and in length
     int max_depth = 1024;
-    float chances_have_BOM;
-    float chances_over_max_number_range;
-    float chances_over_max_number_size;
-    float chances_over_max_string_size;
-    float chances_over_max_whitespace_size;
-    float chances_over_max_depth;
-    float chances_invalid_comma;
-    float chances_invalid_utf8;
-    float chances_invalid_string;
-    float chances_invalid_codepoint;
-    float chances_invalid_number;
-    float chances_generating_number;
-    float chances_generating_string;
-    float chances_generating_object;
-    float chances_generating_array;
-    float chances_generating_null;
-    float chances_generating_false;
-    float chances_generating_true;
+    float chances_have_BOM = 0;
+    float chances_over_max_number_range = 0;
+    float chances_over_max_number_size = 0;
+    float chances_over_max_string_size = 0;
+    float chances_over_max_whitespace_size = 0;
+    float chances_over_max_depth = 0;
+    float chances_invalid_comma = 0;
+    float chances_invalid_utf8 = 0;
+    float chances_invalid_string = 0;
+    float chances_invalid_codepoint = 0;
+    float chances_invalid_number = 0;
+    float chances_generating_number = 0;
+    float chances_generating_string = 0;
+    float chances_generating_object = 0;
+    float chances_generating_array = 0;
+    float chances_generating_null = 0;
+    float chances_generating_false = 0;
+    float chances_generating_true = 0;
 
     RandomJsonSettings() {}
 
