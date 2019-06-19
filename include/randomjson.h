@@ -54,6 +54,7 @@ struct RandomJsonSettings {
     int generation_seed = std::random_device{}();
     int mutation_seed = std::random_device{}();
     int number_of_mutations = 0;
+    std::vector<int> skipped_mutations; // we want to skip mutations that causes errors
     bool bom = false;
     int max_number_range = 308; // Numbers will be smaller than 10^range
     int max_number_size; // in bytes and in length
@@ -95,12 +96,16 @@ struct RandomJsonSettings {
     {}
 };
 
+
 class RandomJson {
     public:
     RandomJson(const RandomJsonSettings& settings);
     ~RandomJson();
 
+    // Randomly modify bytes
     void mutate();
+    // Reverse the modifications of the last mutation. Only the last one.
+    void reverse_mutation();
     void save(std::string file_name);
     void load_settings(const RandomJsonSettings& new_settings);
 
@@ -151,6 +156,13 @@ class RandomJson {
     RandomEngine generation_random;
     RandomEngine mutation_random;
 
+    // To save value of a mutated byte
+    struct SavedByte {
+        int position;
+        char value;
+    };
+    std::vector<SavedByte> saved_bytes;
+
     RandomJsonSettings settings;
 };
 
@@ -164,6 +176,10 @@ RandomJson::RandomJson(const RandomJsonSettings& settings)
     }
     else {
         generate();
+    }
+
+    for (int i = 0; i < settings.number_of_mutations; i++) {
+        mutate();
     }
 }
 
@@ -754,56 +770,24 @@ void RandomJson::generate_json(char* json, int size, RandomEngine& random_genera
 }
 
 void RandomJson::mutate() {
+    const int bytes_to_change = 1;
+
+    saved_bytes.clear();
+    for (int i = 0; i < bytes_to_change; i++) {
+        int random_position = mutation_random.next_ranged_int(0, settings.size-1);
+        char previous_value = json[random_position];
+        json[random_position] = mutation_random.next_char();
+        SavedByte saved_byte { random_position, previous_value};
+        saved_bytes.push_back(saved_byte);
+    }
     settings.number_of_mutations++;
-    char opening_bracket;
-    int opening_bracket_position = -1;
-    char closing_bracket;
-    int closing_bracket_position = settings.size-1;
-    int brackets_to_close = 1;
+}
 
-    // finding a random opening bracket
-    int position = mutation_random.next_ranged_int(0, settings.size);    
-    while (position < settings.size-1) {
-        switch (json[position]) {
-            case '{':
-                opening_bracket = '{';
-                closing_bracket = '}';
-                opening_bracket_position = position;
-                break;
-            case '[':
-                opening_bracket = '[';
-                closing_bracket = ']';
-                opening_bracket_position = position;
-                break;
-            default:
-                position++;
-                break;
-        }
-        if (opening_bracket_position > -1) {
-            break;
-        }
+void RandomJson::reverse_mutation() {
+    for (SavedByte saved_byte : saved_bytes) {
+        json[saved_byte.position] = saved_byte.value;
     }
-    
-    // finding the corresponding closing bracket
-    while (position < settings.size-1) {
-        position++;
-        if (json[position] == opening_bracket) {
-            brackets_to_close++;
-        }
-        else if (json[position] == closing_bracket) {
-            brackets_to_close--;
-            if (brackets_to_close == 0) {
-                closing_bracket_position = position;
-                break;
-            }
-        }
-    }
-
-    // generating something random
-    if (closing_bracket_position < settings.size) {
-        int size = closing_bracket_position - opening_bracket_position + 1;
-        generate_json(&json[opening_bracket_position], size, mutation_random);
-    }
+    saved_bytes.clear();
 }
 
 void RandomJson::save(std::string file_name)
@@ -814,8 +798,9 @@ void RandomJson::save(std::string file_name)
 }
 
 void RandomJson::load_settings(const RandomJsonSettings& new_settings) {
-    // TODO: Find an intelligent way to reallocate memory only if necessary and not duplicate code
     settings = new_settings;
+    // TODO: Find an intelligent way to reallocate memory only if necessary
+    delete[] json;
     generation_random.seed(settings.generation_seed);
     mutation_random.seed(settings.mutation_seed);
     if (settings.filepath != "") {
@@ -823,6 +808,10 @@ void RandomJson::load_settings(const RandomJsonSettings& new_settings) {
     }
     else {
         generate();
+    }
+
+    for (int i = 0; i < settings.number_of_mutations; i++) {
+        mutate();
     }
 }
 
