@@ -33,7 +33,7 @@ int main(int argc, char** argv) {
     // doing multiple tests
     for (int i = 0; i < 100; i++)
     {
-        randomjson::RandomJsonSettings settings(size);
+        randomjson::Settings settings(size);
         randomjson::RandomJson random_json(settings);
         random_json.save("test.json");
         std::cout << "seed " << random_json.get_generation_seed() << std::endl;

@@ -44,7 +44,7 @@ class RandomEngine {
     uint64_t wyhash64_x_;
 };
 
-struct RandomJsonSettings {
+struct Settings {
     // If filepath is different than an empty string, RandomJson will load from the corresponding file.
     // That means the json document won't be randomly generated.
     // That implies the generation_seed won't be used and the size will be adjusted to the file's size.
@@ -61,7 +61,8 @@ struct RandomJsonSettings {
     int max_string_size = 2048; // in bytes
     int max_whitespace_size = 24; // in bytes and in length
     int max_depth = 1024;
-    float chances_have_BOM = 0;
+    // These are other option ideas that are not currently implemented.
+    /*float chances_have_BOM = 0;
     float chances_over_max_number_range = 0;
     float chances_over_max_number_size = 0;
     float chances_over_max_string_size = 0;
@@ -78,20 +79,20 @@ struct RandomJsonSettings {
     float chances_generating_array = 0;
     float chances_generating_null = 0;
     float chances_generating_false = 0;
-    float chances_generating_true = 0;
+    float chances_generating_true = 0;*/
 
-    RandomJsonSettings() {}
+    Settings() {}
 
-    RandomJsonSettings(int size)
+    Settings(int size)
     : size(size)
     {}
 
-    RandomJsonSettings(int size, int mutation_seed)
+    Settings(int size, int mutation_seed)
     : size(size)
     , mutation_seed(mutation_seed)
     {}
 
-    RandomJsonSettings(std::string filepath)
+    Settings(std::string filepath)
     : filepath(filepath)
     {}
 };
@@ -99,7 +100,7 @@ struct RandomJsonSettings {
 
 class RandomJson {
     public:
-    RandomJson(const RandomJsonSettings& settings);
+    RandomJson(const Settings& settings);
     ~RandomJson();
 
     // Randomly modify bytes
@@ -107,7 +108,7 @@ class RandomJson {
     // Reverse the modifications of the last mutation. Only the last one.
     void reverse_mutation();
     void save(std::string file_name);
-    void load_settings(const RandomJsonSettings& new_settings);
+    void load_settings(const Settings& new_settings);
 
     // getters
     const char* get_json();
@@ -163,10 +164,10 @@ class RandomJson {
     };
     std::vector<SavedByte> saved_bytes;
 
-    RandomJsonSettings settings;
+    Settings settings;
 };
 
-RandomJson::RandomJson(const RandomJsonSettings& settings)
+RandomJson::RandomJson(const Settings& settings)
 : settings(settings)
 {
     generation_random.seed(settings.generation_seed);
@@ -797,7 +798,7 @@ void RandomJson::save(std::string file_name)
     file.close();
 }
 
-void RandomJson::load_settings(const RandomJsonSettings& new_settings) {
+void RandomJson::load_settings(const Settings& new_settings) {
     settings = new_settings;
     // TODO: Find an intelligent way to reallocate memory only if necessary
     delete[] json;
