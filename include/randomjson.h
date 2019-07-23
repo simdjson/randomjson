@@ -30,13 +30,24 @@ class RandomEngine {
     int next_int() { return static_cast<int>(next()); }
     char next_char() { return static_cast<char>(next()); }
     double next_double() { return static_cast<double>(next()); }
-    int next_ranged_int(int min, int max) {
-            if (min == max) {
+    int next_ranged_int(int min, int max) { // min and max are include
+        // Adapted from https://lemire.me/blog/2019/06/06/nearly-divisionless-random-integer-generation-on-various-systems/
+       /*  if (min == max) {
             return min;
+       }*/
+        int s = max-min+1;
+        uint64_t x = next();
+        __uint128_t m = (__uint128_t) x * (__uint128_t) s;
+        uint64_t l = (uint64_t) m;
+        if (l < s) {
+            uint64_t t = -s % s;
+            while (l < t) {
+                x = next();
+                m = (__uint128_t) x * (__uint128_t) s;
+                l = (uint64_t) m;
+            }
         }
-        int range = max-min+1;
-        uint64_t random_number = next();
-        return random_number%range + min;
+        return (m >> 64) + min;
     }
 
     private:
