@@ -3,21 +3,17 @@
 #include "randomjson.h"
 #include "simdjson.h"
 #include "simdjson.cpp"
-
-// Namespace to prevent a conflict with simdjson.cpp because it contains simdutf8checks.
-namespace simdutf8check {
 #include "simdutf8check.h"
-}
 
 void test_utf8(const char* json, int size) {
-    assert(simdutf8check::validate_utf8_fast(json, size));
+    assert(validate_utf8_fast(json, size));
 }
 
 void test_parse_simdjson(const char* json, int size) {
-    ParsedJson pj;
+    simdjson::ParsedJson pj;
     bool allocation_is_successful = pj.allocateCapacity(size);
     assert(allocation_is_successful);
-    const int res = json_parse(json, size, pj);
+    const int res = simdjson::json_parse(json, size, pj);
     if (res != simdjson::SUCCESS) {
         std::cout << "simdjson error: " << res << std::endl;
     }
