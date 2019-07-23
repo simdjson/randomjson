@@ -147,6 +147,8 @@ class RandomJson {
     int insert_float(char* json, int max_size, RandomEngine& random_generator);
     // inserts a random string
     int insert_string(char* json, int max_size, RandomEngine& random_generator);
+    // inserts "true", "false" or "null" value.
+    int insert_true_false_or_null(char* json, int max_size, RandomEngine& random_generator);
     // Inserts a random sequence of whitespaces for a random size of bytes
     int insert_whitespace(char* json, int max_size, RandomEngine& random_generator);
     // Inserts a random sequences of whitespaces for a given size of bytes.
@@ -622,7 +624,7 @@ int RandomJson::insert_value(char* json, std::stack<char>& closing_stack, std::s
     }
 
     // the number associated to the type is arbitrary
-    switch (random_generator.next_ranged_int(0, 2)) {
+    switch (random_generator.next_ranged_int(0, 3)) {
     case 0:
         size = init_object_or_array(json, closing_stack, use_comma, max_size, random_generator);
         break;
@@ -634,6 +636,12 @@ int RandomJson::insert_value(char* json, std::stack<char>& closing_stack, std::s
     break;
     case 2:
         size = insert_number(json, max_size, random_generator);
+        if (size != 0) {
+            use_comma.top() = true;
+        }
+        break;
+    case 3:
+        size = insert_true_false_or_null(json, max_size, random_generator);
         if (size != 0) {
             use_comma.top() = true;
         }
@@ -682,6 +690,41 @@ int RandomJson::randomly_close_bracket(char* json, std::stack<char>& closing_sta
         use_comma.pop();
         use_comma.top() = true;
         size = 1;
+    }
+    return size;
+}
+
+int RandomJson::insert_true_false_or_null(char* json, int max_size, RandomEngine& random_generator)
+{
+    const int min_size = 4;
+    int size = 0;
+    if (max_size < min_size) {
+        return size;
+    }
+
+    switch (random_generator.next_ranged_int(0, max_size == 4 ? 1 : 2)) {
+    case 0:
+        json[0] = 't';
+        json[1] = 'r';
+        json[2] = 'u';
+        json[3] = 'e';
+        size = 4;
+        break;
+    case 1:
+        json[0] = 'n';
+        json[1] = 'u';
+        json[2] = 'l';
+        json[3] = 'l';
+        size = 4;
+        break;
+    case 2:
+        json[0] = 'f';
+        json[1] = 'a';
+        json[2] = 'l';
+        json[3] = 's';
+        json[4] = 'e';
+        size = 5;
+        break;
     }
     return size;
 }
