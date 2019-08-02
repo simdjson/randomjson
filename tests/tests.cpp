@@ -11,7 +11,7 @@ void test_utf8(const char* json, int size) {
 
 void test_parse_simdjson(const char* json, int size) {
     simdjson::ParsedJson pj;
-    bool allocation_is_successful = pj.allocateCapacity(size);
+    bool allocation_is_successful = pj.allocate_capacity(size);
     assert(allocation_is_successful);
     const int res = simdjson::json_parse(json, size, pj);
     if (res != simdjson::SUCCESS) {
