@@ -220,7 +220,7 @@ int RandomJson::insert_integer(char* json, int max_size, RandomEngine& random_ge
         return size;
     }
 
-    int number = random_generator.next_int();
+    uint64_t number = random_generator.next_int();
 
     // preventing single minus sign
     if (max_size == min_size && number < 0) {
